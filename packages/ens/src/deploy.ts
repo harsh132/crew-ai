@@ -41,6 +41,7 @@ import { namehash } from 'viem/ens';
 import { ENS } from './deployment';
 import { registryAbi } from './abi';
 import { ensName } from './client';
+import type { Grant } from './roles';
 
 /**
  * Every role slot, and nothing that is not a role slot.
@@ -170,10 +171,16 @@ const deployProxy = async (
   }
 };
 
-/** Deploys the caller's own resolver, which it may actually write records to. */
+/**
+ * Deploys a resolver owned by `owner`, which it may actually write records to.
+ *
+ * `grants` adds accounts beside the owner — an organization's resolver is owned
+ * by the organization and written to by its managers, and the initialiser is
+ * the one moment a grant can be made without the owner signing for it.
+ */
 export const deployResolver = async (
   clients: Clients,
-  options: { owner: Address; version?: bigint } = { owner: '0x' as Address },
+  options: { owner: Address; version?: bigint; grants?: readonly Grant[] } = { owner: '0x' as Address },
 ): Promise<{ address: Address; hash: Hash | null }> =>
   deployProxy(clients, {
     implementation: ENS.permissionedResolverImpl,
@@ -181,9 +188,23 @@ export const deployResolver = async (
     data: encodeFunctionData({
       abi: resolverInitAbi,
       functionName: 'initialize',
-      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }], []],
+      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)], []],
     }),
   });
+
+/*
+  Refused before it reaches a deployment. A bitmap with a bit outside a role
+  slot reverts the initialiser with an error no signature database knows, and a
+  reverted initialiser here burns the salt — see the note on `deployRegistry`.
+*/
+const checkedGrants = (grants: readonly Grant[] | undefined): Grant[] => {
+  for (const grant of grants ?? []) {
+    if (!isRoleBitmap(grant.roleBitmap)) {
+      throw new Error(`the grant to ${grant.account} is not a valid role bitmap`);
+    }
+  }
+  return [...(grants ?? [])];
+};
 
 const registryInitAbi = parseAbi([
   'struct Grant { address account; uint256 roleBitmap; }',
@@ -208,7 +229,7 @@ const registryInitAbi = parseAbi([
  */
 export const deployRegistry = async (
   clients: Clients,
-  options: { name: string; owner: Address; version?: bigint },
+  options: { name: string; owner: Address; version?: bigint; grants?: readonly Grant[] },
 ): Promise<{ address: Address; hash: Hash | null }> =>
   deployProxy(clients, {
     implementation: ENS.userRegistryImpl,
@@ -216,7 +237,7 @@ export const deployRegistry = async (
     data: encodeFunctionData({
       abi: registryInitAbi,
       functionName: 'initialize',
-      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }]],
+      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)]],
     }),
   });
 

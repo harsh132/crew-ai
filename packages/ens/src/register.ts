@@ -52,9 +52,12 @@ export type RegistrationPlan = {
   /**
    * The registry that will own this name's subnames.
    *
-   * Zero at registration: the registry is deployed afterwards and attached
-   * with `setSubregistry`, because the factory needs the name's owner to exist
-   * before it can grant it anything.
+   * Zero unless one is passed. A registry grants roles to an *address*, not to
+   * a name, so it can be deployed before the name exists and attached here —
+   * which is what lets a name be registered to an owner who never has to sign a
+   * follow-up `setSubregistry`. The organization flow depends on that: the name
+   * belongs to a quorum-owned wallet, and the registration is paid and sent by
+   * someone else.
    */
   subregistry: Address;
   resolver: Address;
@@ -81,6 +84,7 @@ export const planRegistration = async (
     owner: Address;
     durationSeconds?: bigint;
     resolver?: Address;
+    subregistry?: Address;
     paymentToken?: Address;
   },
 ): Promise<RegistrationPlan> => {
@@ -113,7 +117,7 @@ export const planRegistration = async (
     label,
     owner: params.owner,
     secret: freshSecret(),
-    subregistry: ZERO_ADDRESS,
+    subregistry: params.subregistry ?? ZERO_ADDRESS,
     resolver: params.resolver ?? ENS.publicResolver,
     durationSeconds,
     paymentToken,
@@ -179,16 +183,22 @@ export const ensureFunds = async (
   clients: { public: PublicClient; wallet: WalletClient },
   plan: RegistrationPlan,
 ): Promise<{ minted: Hash | null; approved: Hash | null }> => {
-  const owner = plan.owner;
   const account = clients.wallet.account!;
   const chain = clients.wallet.chain!;
+  /*
+    The payer is whoever sends `register`, not whoever will own the name. The
+    two were always the same account here, so checking the owner's balance
+    worked — until a name was registered on someone else's behalf, when it
+    would mint to and measure an account that never pays anything.
+  */
+  const payer = account.address;
 
   let minted: Hash | null = null;
   const balance = await clients.public.readContract({
     address: plan.paymentToken,
     abi: mockUsdcAbi,
     functionName: 'balanceOf',
-    args: [owner],
+    args: [payer],
   });
   if (balance < plan.priceMinor) {
     /*
@@ -200,7 +210,7 @@ export const ensureFunds = async (
       address: plan.paymentToken,
       abi: mockUsdcAbi,
       functionName: 'mint',
-      args: [owner, plan.priceMinor * 10n],
+      args: [payer, plan.priceMinor * 10n],
       account,
       chain,
     });
@@ -212,7 +222,7 @@ export const ensureFunds = async (
     address: plan.paymentToken,
     abi: mockUsdcAbi,
     functionName: 'allowance',
-    args: [owner, ENS.ethRegistrar],
+    args: [payer, ENS.ethRegistrar],
   });
   if (allowance < plan.priceMinor) {
     approved = await clients.wallet.writeContract({

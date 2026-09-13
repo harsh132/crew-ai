@@ -24,6 +24,19 @@
       "port": 8787
     },
     {
+      "name": "crew-backend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "wrangler",
+        "dev",
+        "--config",
+        "apps/crew-backend/wrangler.jsonc",
+        "--port",
+        "8788"
+      ],
+      "port": 8788
+    },
+    {
       "name": "crew",
       "runtimeExecutable": "bun",
       "runtimeArgs": [

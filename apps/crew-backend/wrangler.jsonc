@@ -1,0 +1,30 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "crew-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  /*
+    Organizations, members, roles and the audit log. No database id: locally
+    Wrangler simulates it, and a deploy provisions it on first run.
+  */
+  "d1_databases": [
+    { "binding": "DB", "database_name": "crew-backend", "migrations_dir": "migrations" }
+  ],
+
+  /*
+    One object per organization while its name is being set up. Registration is
+    commit, wait, reveal — minutes of chain time a request cannot sleep through,
+    and an alarm can.
+  */
+  "durable_objects": {
+    "bindings": [{ "name": "ORG_SETUP", "class_name": "OrgSetup" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OrgSetup"] }],
+
+  "vars": {
+    "SEPOLIA_RPC": "https://ethereum-sepolia-rpc.publicnode.com"
+  }
+}
