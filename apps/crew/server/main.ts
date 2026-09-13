@@ -42,6 +42,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from './http';
+import { adoptEarlierCrew, CREW_HOME } from './home';
 import { emit, subscribe } from './events';
 import { autoDepositThreshold, isDepositing } from './auto-deposit';
 import { deriveSigner, saveSigner, storedSigner, UNLOCK } from './signer';
@@ -253,7 +254,7 @@ const stateOf = (runtime: Runtime) => ({
   })),
 });
 
-console.log('\n  edgerouter crew\n');
+console.log('\n  crew ai\n');
 console.log(`  gate     ${GATE}`);
 console.log(`  network  ${NETWORK}`);
 
@@ -289,6 +290,14 @@ const start = async (): Promise<void> => {
     }`,
   );
 };
+
+/*
+  Before anything reads the key: a crew kept in its earlier location is copied
+  into this one the first time the runtime starts.
+*/
+const carried = adoptEarlierCrew();
+console.log(`  home     ${CREW_HOME}`);
+if (carried.length > 0) console.log(`  data     carried over ${carried.join(', ')} from the earlier location`);
 
 if (storedSigner()) {
   try {

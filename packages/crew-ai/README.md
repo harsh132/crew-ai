@@ -33,7 +33,7 @@ This runs on **testnets** — Arc testnet for payments and Sepolia for ENS names
 | `CREW_NETWORK` | `eip155:5042002` | Payment network (Arc testnet) |
 | `CREW_BACKEND` | the hosted crew backend | Names and organizations |
 | `CREW_AUTO_DEPOSIT` | on | Set to `off` to stop auto-depositing into Gateway |
-| `EDGEROUTER_HOME` | `~/.edgerouter` | Where the crew's key and data are kept |
+| `CREW_HOME` | `~/.crew-ai` | Where the crew's key and data are kept |
 
 `crew --help` lists them too.
 

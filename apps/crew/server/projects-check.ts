@@ -11,6 +11,7 @@
  */
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
+import { CREW_HOME } from './home';
 import { join } from 'node:path';
 import { resolveIn, describeGrant, type ProjectMode } from './projects';
 
@@ -112,17 +113,17 @@ const wholeMachine = [
 ];
 await refuses(
   'the runtime’s own store is refused even when the whole home directory is granted',
-  () => resolveIn(wholeMachine, join(homedir(), '.edgerouter', 'crew.json'), 'read'),
+  () => resolveIn(wholeMachine, join(CREW_HOME,'crew.json'), 'read'),
   /off limits/,
 );
 await refuses(
   'and so is the wallet inside it',
-  () => resolveIn(wholeMachine, join(homedir(), '.edgerouter', 'wallets', 'evm.json'), 'read'),
+  () => resolveIn(wholeMachine, join(CREW_HOME,'wallets', 'evm.json'), 'read'),
   /off limits/,
 );
 check(
   'but an agent’s own workspace under it stays writable',
-  (await resolveIn(wholeMachine, join(homedir(), '.edgerouter', 'workspaces', 'x', 'notes.md'), 'write')).includes(
+  (await resolveIn(wholeMachine, join(CREW_HOME,'workspaces', 'x', 'notes.md'), 'write')).includes(
     'workspaces',
   ),
 );

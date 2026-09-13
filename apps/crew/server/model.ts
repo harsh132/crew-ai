@@ -34,7 +34,7 @@ export const modelFor = (gate: string, id: string): Model<'openai-completions'> 
     resolve this to a hosted endpoint with an API key. The baseUrl is the whole
     address, and the key is a wallet.
   */
-  provider: 'edgerouter' as Model<'openai-completions'>['provider'],
+  provider: 'gate' as Model<'openai-completions'>['provider'],
   baseUrl: new URL('/v1', gate).toString(),
   reasoning: false,
   input: ['text'],

@@ -3,7 +3,7 @@
  *
  * Three things make an agent here, and only the third is ordinary:
  *
- *   1. A name, minted under `edgerouter.eth`. Not a label in a database — a
+ *   1. A name, minted under the person's own name (`alex.crewai.eth`). Not a label in a database — a
  *      record on Sepolia that resolves to an address, which is what lets the
  *      authority ask "does this thing still exist" before signing anything.
  *   2. An allowance, issued by the authority as a capability. The agent holds a
@@ -17,6 +17,7 @@
  * stop. It simply cannot buy anything more.
  */
 import { randomUUID } from 'node:crypto';
+import { CREW_HOME } from './home';
 import {
   createAuthority,
   authorityHandler,
@@ -180,7 +181,7 @@ export const NAME_GAS_ASK_WEI = weiFromEnv('CREW_NAME_GAS_ASK_WEI', 10_000_000_0
 const nameGasOf = async (naming: boolean): Promise<bigint | null | undefined> => {
   if (!naming) return null;
   try {
-    const ens = openEnsSigner();
+    const ens = openEnsSigner({ home: CREW_HOME });
     return await ens.public.getBalance({ address: ens.address });
   } catch {
     return undefined;
@@ -230,7 +231,7 @@ const signerMayRegister = async (
  * registration, which costs nothing and fails exactly when a real one would.
  */
 export const setIdentity = async (runtime: Runtime, name: string, derivedFrom: string | null): Promise<void> => {
-  const ens = openEnsSigner();
+  const ens = openEnsSigner({ home: CREW_HOME });
   const client = createEnsClient();
 
   const registry = await registryOf(ens.public, name);
@@ -395,7 +396,7 @@ export const boot = async (options: { gate: string; network: string }): Promise<
   let naming = false;
   if (identity) {
     try {
-      const ens = openEnsSigner();
+      const ens = openEnsSigner({ home: CREW_HOME });
       const registry = await registryOf(ens.public, identity.name);
       naming =
         registry !== null &&
@@ -606,7 +607,7 @@ export const hire = async (
   if (runtime.naming && runtime.root) {
     emit({ type: 'log', text: `minting ${label}.${runtime.root} …` });
     try {
-      const ens = openEnsSigner();
+      const ens = openEnsSigner({ home: CREW_HOME });
       const named = await ensureAgentName(
         { public: ens.public, wallet: ens.wallet },
         {
@@ -768,7 +769,7 @@ export const update = async (
     if (changed && agent.name && agent.ensResolver) {
       emit({ type: 'log', text: `publishing ${agent.name}'s permissions …` });
       try {
-        const ens = openEnsSigner();
+        const ens = openEnsSigner({ home: CREW_HOME });
         await setText(
           { public: ens.public, wallet: ens.wallet },
           {
@@ -843,7 +844,7 @@ export const update = async (
   if (agent.name && agent.ensResolver && Object.keys(profile).length > 0) {
     emit({ type: 'log', text: `updating ${agent.name} …` });
     try {
-      const ens = openEnsSigner();
+      const ens = openEnsSigner({ home: CREW_HOME });
       await setProfile(
         { public: ens.public, wallet: ens.wallet },
         { resolver: agent.ensResolver as `0x${string}`, name: agent.name, ...profile },
@@ -879,7 +880,7 @@ export const fire = async (runtime: Runtime, id: string): Promise<void> => {
   if (agent.name && agent.ensParentRegistry) {
     emit({ type: 'log', text: `clearing ${agent.name} …` });
     try {
-      const ens = openEnsSigner();
+      const ens = openEnsSigner({ home: CREW_HOME });
       const resolver = agent.ensResolver ?? (await createEnsClient().resolverOf(agent.name)) ?? undefined;
       await revokeAgentName(
         { public: ens.public, wallet: ens.wallet },

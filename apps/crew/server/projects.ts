@@ -2,7 +2,7 @@
  * Real directories on the machine, handed to agents deliberately.
  *
  * Until now an agent could reach one directory — its own, under
- * `~/.edgerouter/workspaces` — and nothing else. That is safe and nearly
+ * `~/.crew-ai/workspaces` — and nothing else. That is safe and nearly
  * useless: the work people actually want done is on a repo that already exists
  * somewhere, and an agent that cannot see it can only be told about it.
  *
@@ -38,9 +38,10 @@ import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { CREW_HOME } from './home';
 
 const HOME = homedir();
-const RUNTIME_HOME = join(HOME, '.edgerouter');
+const RUNTIME_HOME = CREW_HOME;
 const WORKSPACES = join(RUNTIME_HOME, 'workspaces');
 
 export type ProjectMode = 'read' | 'write';

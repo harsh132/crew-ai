@@ -27,6 +27,7 @@
 import { formatAmount } from '../../../packages/sdk/src/index';
 import { depositToGateway, gatewayFunding, isGatewayNetwork } from '../../../packages/sdk/src/wallet/gateway';
 import { readSharedWallet } from '../../../packages/sdk/src/wallet/store';
+import { CREW_HOME } from './home';
 import { emit } from './events';
 
 const minorFromEnv = (name: string, fallback: bigint): bigint => {
@@ -70,7 +71,7 @@ export const autoDeposit = (network: string, onChange?: () => void): Promise<big
   if (inFlight) return inFlight;
   if (Date.now() - lastFailureAt < RETRY_AFTER_MS) return Promise.resolve(null);
 
-  const stored = readSharedWallet();
+  const stored = readSharedWallet(CREW_HOME);
   if (!stored) return Promise.resolve(null);
   const privateKey = `0x${stored.privateKey}`;
 

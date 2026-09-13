@@ -12,16 +12,16 @@
  * right size, and it can be read by a human when something looks wrong.
  */
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { CREW_HOME } from './home';
 import type { Project } from './projects';
 
 /*
-  The same home the wallet store uses, `EDGEROUTER_HOME` included. They used to
-  disagree — the key followed the variable and the crew did not — so a runtime
-  pointed at a scratch home read its own key and wrote someone else's crew.
+  The same home the key is read from. They used to disagree — the key followed
+  an environment variable and the crew did not — so a runtime pointed at a
+  scratch home read its own key and wrote someone else's crew.
 */
-const HOME = process.env.EDGEROUTER_HOME ?? join(homedir(), '.edgerouter');
+const HOME = CREW_HOME;
 const FILE = join(HOME, 'crew.json');
 
 /** What an agent is doing right now. Not persisted as truth — see `load`. */

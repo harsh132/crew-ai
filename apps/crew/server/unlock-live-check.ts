@@ -1,7 +1,7 @@
 /**
  * Unlocks a running, locked Crew runtime with a throwaway wallet.
  *
- *   CREW_PORT=8811 EDGEROUTER_HOME=<empty dir> bun apps/crew/server/main.ts
+ *   CREW_PORT=8811 CREW_HOME=<empty dir> bun apps/crew/server/main.ts
  *   bun apps/crew/server/unlock-live-check.ts http://127.0.0.1:8811 <that dir>
  *
  * Never point it at a real crew: a successful unlock makes the throwaway
@@ -15,7 +15,7 @@ import { deriveSigner } from './signer';
 
 const base = process.argv[2];
 const home = process.argv[3];
-if (!base || !home) throw new Error('usage: unlock-live-check.ts <runtime url> <its EDGEROUTER_HOME>');
+if (!base || !home) throw new Error('usage: unlock-live-check.ts <runtime url> <its CREW_HOME>');
 const origin = new URL(base).origin;
 
 const results: [string, boolean, string][] = [];

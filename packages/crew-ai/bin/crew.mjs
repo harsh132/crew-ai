@@ -32,11 +32,11 @@ Environment
   CREW_GATE            inference gate URL
   CREW_BACKEND         crew backend URL, for names and organizations
   CREW_AUTO_DEPOSIT    set to "off" to stop depositing wallet USDC into Gateway
-  EDGEROUTER_HOME      where the crew's key and data live (default ~/.edgerouter)
+  CREW_HOME            where the crew's key and data live (default ~/.crew-ai)
 
 Your crew's key is derived from your wallet's signature and cached in
-EDGEROUTER_HOME. Sign in with the same wallet on any computer to get the same
-crew back.`);
+CREW_HOME. Sign in with the same wallet on any computer to get the same crew
+back.`);
   process.exit(0);
 }
 

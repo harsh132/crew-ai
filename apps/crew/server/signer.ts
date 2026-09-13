@@ -45,6 +45,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { readSharedWallet, writeSharedWallet } from '../../../packages/sdk/src/wallet/store';
+import { CREW_HOME } from './home';
 
 /**
  * Mixed into the derivation, and versioned.
@@ -138,7 +139,7 @@ export const deriveSigner = async (account: string, signatures: string[]): Promi
 };
 
 /** The stored signer, if there is one. Never generates. */
-export const storedSigner = () => readSharedWallet();
+export const storedSigner = () => readSharedWallet(CREW_HOME);
 
 /**
  * Keeps the derived key as the runtime's wallet.
@@ -148,14 +149,17 @@ export const storedSigner = () => readSharedWallet();
  * underneath — and overwriting would put somebody's funded key out of reach.
  */
 export const saveSigner = (signer: DerivedSigner): void => {
-  const existing = readSharedWallet();
+  const existing = readSharedWallet(CREW_HOME);
   if (existing) {
     if (getAddress(existing.address) === getAddress(signer.address)) return;
     throw new Error(`a different signer is already stored (${existing.address}); move it aside before unlocking`);
   }
-  writeSharedWallet({
-    privateKey: signer.privateKey.slice(2),
-    address: signer.address,
-    derivedFrom: signer.derivedFrom,
-  });
+  writeSharedWallet(
+    {
+      privateKey: signer.privateKey.slice(2),
+      address: signer.address,
+      derivedFrom: signer.derivedFrom,
+    },
+    CREW_HOME,
+  );
 };

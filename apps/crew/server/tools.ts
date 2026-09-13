@@ -9,7 +9,7 @@
  *
  * ## The room
  *
- * Every agent gets a directory of its own under `~/.edgerouter/workspaces/`,
+ * Every agent gets a directory of its own under `~/.crew-ai/workspaces/`,
  * and cannot address anything outside it. That is not a policy the model is
  * asked to respect — it is a check on every path, after resolution, before the
  * operation. A model that asks for `../../.ssh/id_rsa` gets an error, not a
@@ -34,13 +34,13 @@ import { Type, type Static, type TSchema } from '@earendil-works/pi-ai';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { mkdirSync, existsSync } from 'node:fs';
 import { readFile, writeFile, readdir, stat, mkdir, realpath } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
+import { CREW_HOME } from './home';
 import type { Permission } from './permissions';
 import { resolveIn, workspacePathFor, type ProjectMode } from './projects';
 import { formatAmount, parseAmount } from '../../../packages/sdk/src/index';
 
-const WORKSPACES = join(homedir(), '.edgerouter', 'workspaces');
+const WORKSPACES = join(CREW_HOME, 'workspaces');
 
 /**
  * Directories a search never descends into.
@@ -138,7 +138,7 @@ export const toolsFor = ({
    *
    * Paths are given with forward slashes even on Windows, and that is not
    * cosmetic: a tool argument is JSON, a Windows path is full of backslashes,
-   * and a model that does not double them produces `C:workspaceedgerouter`.
+   * and a model that does not double them produces `C:workspaceproject`.
    * Observed — an agent given a backslash path reported the file did not exist,
    * which is exactly what a mangled path looks like from inside `read_file`.
    * Both forms resolve; only one of them survives being written by a model.
@@ -230,7 +230,7 @@ export const toolsFor = ({
         /*
           Names the path it actually looked at, which is not pedantry: a model
           writing a Windows path into JSON can lose its backslashes, and
-          `C:workspaceedgerouteroo` reported as "that file does not exist" is
+          `C:workspaceprojectnotes.md` reported as "that file does not exist" is
           indistinguishable from a genuine miss. The resolved path in the
           message is what let this be diagnosed at all.
         */

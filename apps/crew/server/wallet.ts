@@ -19,6 +19,7 @@ import {
   type PaymentSigner,
 } from '../../../packages/sdk/src/index';
 import { readSharedWallet } from '../../../packages/sdk/src/wallet/store';
+import { CREW_HOME } from './home';
 
 /**
  * Why a wallet cannot pay yet, in the terms the fix differs by.
@@ -88,7 +89,7 @@ export const openWallet = async (network: string, gate?: string): Promise<OpenWa
     nobody could ever re-derive. The crew's key comes from a signature
     (signer.ts) or not at all.
   */
-  const stored = readSharedWallet();
+  const stored = readSharedWallet(CREW_HOME);
   if (!stored) throw new Error('no signer key — unlock the crew with your wallet');
   const wallet = openEvmWallet({ privateKey: `0x${stored.privateKey}`, address: stored.address, network });
   const privateKey = wallet.exportPrivateKey();
