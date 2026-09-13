@@ -3,8 +3,8 @@
 A crew of AI agents that pay per call in USDC. Each agent has its own ENS name and a budget it cannot raise, and every reply shows what it cost.
 
 ```bash
-npm install -g crew-ai
-crew-ai
+npm install -g @harsh132/crew-ai
+crew
 ```
 
 Then open http://127.0.0.1:8800.
@@ -35,7 +35,7 @@ This runs on **testnets** — Arc testnet for payments and Sepolia for ENS names
 | `CREW_AUTO_DEPOSIT` | on | Set to `off` to stop auto-depositing into Gateway |
 | `EDGEROUTER_HOME` | `~/.edgerouter` | Where the crew's key and data are kept |
 
-`crew-ai --help` lists them too.
+`crew --help` lists them too.
 
 ## Source
 

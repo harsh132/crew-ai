@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `crew-ai` — starts the Crew AI runtime and prints where to open it.
+ * `crew` — starts the Crew AI runtime and prints where to open it.
  *
  * The runtime is the part that holds the crew's key and pays for every call;
  * the page it serves is only a view of it. Everything is bundled into this
@@ -17,14 +17,14 @@ if (args.includes('--version') || args.includes('-v')) {
 }
 
 if (args.includes('--help') || args.includes('-h')) {
-  console.log(`crew-ai ${pkg.version}
+  console.log(`crew ${pkg.version} (${pkg.name})
 
 Starts Crew AI on this machine and serves it at http://127.0.0.1:8800.
 
 Usage
-  crew-ai              start the runtime
-  crew-ai --version    print the version
-  crew-ai --help       show this help
+  crew              start the runtime
+  crew --version    print the version
+  crew --help       show this help
 
 Environment
   CREW_PORT            port to serve on (default 8800)
@@ -42,7 +42,7 @@ crew back.`);
 
 const [major] = process.versions.node.split('.').map(Number);
 if (major < 20) {
-  console.error(`crew-ai needs Node.js 20 or newer; this is ${process.versions.node}.`);
+  console.error(`crew needs Node.js 20 or newer; this is ${process.versions.node}.`);
   process.exit(1);
 }
 

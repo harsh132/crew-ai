@@ -1,10 +1,13 @@
 {
-  "name": "crew-ai",
+  "name": "@harsh132/crew-ai",
   "version": "0.1.0",
   "description": "A crew of AI agents that pay per call in USDC, each with its own ENS name and a budget it cannot raise.",
   "type": "module",
   "bin": {
-    "crew-ai": "bin/crew-ai.mjs"
+    "crew": "bin/crew.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "bin",
