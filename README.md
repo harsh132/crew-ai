@@ -1,169 +1,244 @@
-# edgerouter
+# crew-ai
 
-**Agents delegate to agents. Money does not.**
+Two products in one monorepo, built for a hackathon:
 
-Every x402 router answers how *an* agent pays for something. None answer the
-next question: when that agent spawns five sub-agents, how much may each spend,
-and what stops the tree spending more than the human put in?
+- **Crew AI** — a crew of AI agents that pay per call in USDC. Each agent has its
+  own ENS name and a budget it cannot raise, and every reply shows what it cost.
+- **EdgeRouter** — an x402 gate in front of OpenRouter. Pay per request with a
+  wallet instead of an API key; no account, no signup.
 
-edgerouter is two things that fit together — an inference gate you pay for with
-a wallet instead of an API key, and a budget layer that lets one agent fund
-another without handing over the wallet.
+Crew AI is one client of EdgeRouter. They share a repo and some packages, not an
+identity: nothing in Crew AI is named after EdgeRouter, and EdgeRouter works for
+any x402 client.
 
 ```bash
-bun run wallet address     # an address. That is the entire setup.
+npm install -g @harsh132/crew-ai
+crew                      # then open http://127.0.0.1:8800
 ```
 
-## What works today
+## Architecture
 
-Every line here has been run against a live network, not designed.
+```mermaid
+flowchart LR
+  subgraph local["Your computer — the key never leaves"]
+    page["Crew page<br/>127.0.0.1:8800<br/>React · Privy login"]
+    runtime["Crew runtime<br/>signer key · budget tree<br/>agents · auto-deposit · name guard"]
+  end
 
-| | |
-|---|---|
-| Paid inference, Hedera testnet | settling, generated wallet, no signup |
-| Paid inference, Base Sepolia | settling, gasless for the payer |
-| Delegation | sub-agent spends without a key, stopped by its budget |
-| DSH plugin | installs into DeepSeek Harness, streams tokens |
+  subgraph workers["Cloudflare Workers"]
+    backend["Crew backend<br/>D1 · Durable Objects<br/>ENS manager key"]
+    gate["EdgeRouter gate<br/>x402 · prepaid tabs<br/>EIP-712 vouchers"]
+  end
 
-## No signup, and why that is a design decision rather than a slogan
+  privy["Privy<br/>login · embedded wallets<br/>org key quorums"]
+  openrouter["OpenRouter<br/>models"]
 
-The gate **settles before it serves**. Nothing is spent on a caller's behalf
-until their money has actually moved.
+  subgraph chains["Testnets"]
+    arc["Arc testnet<br/>eip155:5042002<br/>USDC · Circle Gateway"]
+    sepolia["Ethereum Sepolia<br/>ENSv2 names"]
+  end
 
-That ordering is load-bearing. Serving first means extending credit; credit
-needs an identity to extend it to; an identity is only worth checking if it
-cannot be minted for free; and the only unmintable identity here would be a
-token we issue — which is a signup. Settling first removes the whole chain, and
-costs nothing, because settlement was always inside the critical path anyway.
-
-So there is no account, no key to be issued, and nothing to breach. A capability
-token may still be presented, but it only ever *narrows* what a request may do.
-
-## No key to type, either
-
-Asking a user for an account id and a private key is developer UX wearing a
-product's clothes. The plugin generates the key and shows an address instead.
-
-On Hedera that works because of auto account creation: an ECDSA public key
-yields an EVM address, and the first transfer to it *creates the account*.
-Nothing to register, no fee to pay before you can receive. On EVM chains the
-address is already an account.
-
-The key lives in `~/.edgerouter/`, unencrypted, and the README for the plugin
-says so plainly rather than implying otherwise — encryption needs a key, and one
-sitting beside the ciphertext protects nothing. It is a hot wallet holding what
-you chose to put in it, and `sweep` exists because a wallet you cannot leave is
-a hostage.
-
-## Delegation: the part that could not be stateless
-
-A capability says what *one request* may do — a per-call ceiling, an expiry, a
-host list — and the gate checks that with no memory at all, by recomputing a
-signature chain.
-
-But "this sub-agent may spend one hbar in total" is a running total, and a
-running total is state. So the budget lives in the one process that already had
-to be stateful: the one holding the key.
-
-```
-caveats   stateless, at the gate    per-call ceiling, expiry, hosts, depth
-tree      stateful, in the authority cumulative budget, funding, revocation
+  page -- "log in, sign unlock" --> privy
+  page -- "2 signatures · state over SSE" --> runtime
+  page -- "names, orgs, invites" --> backend
+  backend -- "verify token, org wallets" --> privy
+  runtime -- "voucher per call · x402 top-up" --> gate
+  gate -- "forward · usage.cost back" --> openrouter
+  runtime -- "auto-deposit USDC" --> arc
+  gate -- "settle via Circle Gateway" --> arc
+  runtime -- "name guard · mint agent names" --> sepolia
+  backend -- "7702 batch: your name + 0.01 ETH gas" --> sepolia
 ```
 
-A sub-agent holding a capability never sees a key. It asks the authority to
-sign one payment; the authority charges that payment to the sub-agent's node;
-an empty node buys nothing. The delegated signer satisfies the same interface as
-a local one, so the paying client is not a different code path — it is the same
-client pointed at an allowance.
+**Arc for money.** USDC is Arc's gas token, so the crew never needs a second
+asset to pay. USDC that lands in the crew's wallet is deposited into Circle
+Gateway automatically (above 0.10 USDC, keeping 0.05 back).
+
+**Sepolia for names.** ENSv2 registries and resolvers, so users can later bring
+their own `.eth` names.
+
+**Your computer for keys.** The page, the backend and the gate can ask for
+things; only the runtime signs.
+
+### One paid model call
+
+```
+agent    → runtime   call a model
+runtime              capability allows it? budget left?
+runtime  → Sepolia   does this agent's name resolve to the signer?
+runtime  → gate      request + EIP-712 voucher against the tab
+gate     → OpenRouter, reply + usage.cost
+gate     → runtime   reply + receipt, tab debited by the real cost
+runtime  → agent     answer + cost
+
+when the tab runs low:
+runtime  → gate      x402 top-up from the Gateway balance
+gate     → Arc       settles as a Gateway nanopayment
+```
+
+## Crew AI
+
+### Keys you never back up
+
+The crew's signer key is derived from your wallet's signature, not generated:
+
+1. Log in with Privy (email, browser wallet or WalletConnect).
+2. Sign an EIP-712 `CrewSigner` message twice. Deterministic signing makes both
+   signatures identical; if they differ, the unlock is refused.
+3. `key = keccak256("crew signer v1" ‖ r ‖ s)`. The signature is never written
+   to disk.
+4. The key is cached in `~/.crew-ai/wallet.json`.
+
+Sign in with the same wallet on any computer and you get the same crew back.
+
+### Names
+
+```
+crewai.eth                       owner 0x3f87…a2d3
+└─ alex.crewai.eth               owned by your wallet, set up by the backend in one tx
+   ├─ researcher.alex.crewai.eth minted by your crew signer when you hire
+   └─ writer.alex.crewai.eth
+
+acme.eth                         an organization's own name (Privy org wallet)
+└─ crew.acme.eth
+   └─ alex.crew.acme.eth         issued when alex accepts an invite
+```
+
+The backend claims your name with one EIP-7702 batch (registry, resolver,
+roles, address) and sends your signer 0.01 ETH on Sepolia to cover agent names.
+Before every payment, the runtime checks that the paying agent's name still
+resolves — a revoked agent cannot pay.
+
+Organizations invite members by their Crew name. The member sees a pop-up,
+accepts, and gets a name under the organization's `crew.` subname.
+
+### Budgets: delegation without handing over the wallet
+
+An agent never holds a key. It holds a capability, and asks the runtime to sign
+one payment at a time; the runtime charges that payment to the agent's node in
+a budget tree, and an empty node buys nothing.
+
+```
+caveats   stateless, checked per request    per-call ceiling, expiry, hosts, depth
+tree      stateful, in the runtime          cumulative budget, funding, revocation
+```
 
 **Attenuation only narrows**, and not because a rule forbids widening. Macaroon
 semantics: appending a caveat is one HMAC, removing one needs a signature that
 was destroyed when it was added. Widening is unreachable, not prohibited.
 
 **Revocation is emptying, not listing.** Sweep a node and its subtree; a valid
-token over an empty balance already grants nothing, so there is no revocation
-list and nothing is eventually-consistent.
+token over an empty balance grants nothing, so there is no revocation list.
 
-Proven end to end against the deployed gate, with real money:
-
-```
-call 1   paid 0.01234 ℏ, 0.01851 ℏ left
-call 2   paid 0.01234 ℏ, 0.00617 ℏ left
-call 3   REFUSED — budget_exhausted: holds 617000, this call costs 1234000
-```
-
-The refusal comes from the side holding the money. A cap a sub-agent enforces on
+The refusal comes from the side holding the money. A cap an agent enforces on
 itself is not a cap.
 
-### What the tree is, precisely
+### Run it from source
 
-Nodes are accounting entries in the authority, not one wallet each. One real
-wallet sits underneath, and the tree decides who may spend how much of it. The
-guarantee is therefore as strong as the authority process — which is the right
-place for it, since that process holds the key regardless, and it is what makes
-delegation instant and free rather than a transaction per sub-agent.
-
-The on-chain bound is the wallet itself: it can only ever spend what was put in
-it, whatever happens above.
-
-## Layout
-
-```
-packages/core   attenuation algebra + funding rules      no dependencies
-packages/sdk    x402 client, wallets, budget authority
-packages/dsh    DeepSeek Harness provider plugin
-apps/gate       the x402 gate — a stateless Cloudflare Worker
-docs/           product thesis, build plan, verified findings
+```bash
+bun install
+bun run --cwd apps/crew server      # runtime on 127.0.0.1:8800
+bun run --cwd apps/crew dev         # page with hot reload on :5180
 ```
 
-## The gate
+| Variable | Default | |
+|---|---|---|
+| `CREW_PORT` | `8800` | Port the runtime serves on |
+| `CREW_NETWORK` | `eip155:5042002` | Payment network (Arc testnet) |
+| `CREW_GATE` | the hosted EdgeRouter gate | Inference gate URL |
+| `CREW_BACKEND` | the hosted Crew backend | Names and organizations |
+| `CREW_AUTO_DEPOSIT` | on | `off` stops depositing into Gateway |
+| `CREW_HOME` | `~/.crew-ai` | Where the crew's key and data live |
+
+The backend (`apps/crew-backend`) needs `PRIVY_APP_ID`, `PRIVY_APP_SECRET`,
+`ENS_MANAGER_PRIVATE_KEY` and `SEPOLIA_RPC` in `.dev.vars`:
+
+```bash
+bun run --cwd apps/crew-backend migrate:local
+bun run --cwd apps/crew-backend dev
+```
+
+## EdgeRouter
 
 An OpenAI-compatible endpoint behind x402. Point any existing client at it:
 
 ```
 price the request  →  402 or accept payment  →  verify  →  settle
-→  proxy upstream  →  stream the answer back
+→  proxy to OpenRouter  →  stream the answer back
 ```
 
-Stateless: no database, no session, no account. Two networks, each settled by
-whichever facilitator actually settles it — Hedera through Blocky402, Base
-Sepolia through x402.org — because no facilitator covers everything and a single
-global one caps the gate at that facilitator's own coverage.
+| Route | |
+|---|---|
+| `GET /v1/models` | Models and prices |
+| `POST /v1/chat/completions` | Paid per request, or from a tab |
+| `POST /v1/tab/topup` | Prepay a tab with one x402 payment |
+| `GET /v1/tab?payer=…&network=…` | A payer's tab balance |
 
-Answers stream. The gate hands its upstream body through unread rather than
-collecting it, and the settlement receipt rides in a header sent ahead of the
-first byte — so a streamed answer is paid for as completely as a buffered one,
-and the proof arrives before the text.
+Networks: Arc testnet (settled through Circle Gateway), Base Sepolia and Hedera
+testnet — each settled by the facilitator that actually covers it.
+
+### Settle before serve
+
+The gate **settles before it serves**. Nothing is spent on a caller's behalf
+until their money has moved. Serving first means extending credit; credit needs
+an identity; an identity is only worth checking if it cannot be minted for free;
+and the only unmintable identity would be a token the gate issues — a signup.
+Settling first removes the whole chain.
+
+### Tabs
+
+Settling on-chain per call is too slow and too expensive for chat. A tab is
+prepaid once with x402, then each call carries an EIP-712 voucher and is debited
+by what OpenRouter reports in `usage.cost` — so the payer is charged what the
+call actually cost, not a worst-case quote.
+
+Answers stream. The receipt rides in a header sent ahead of the first byte, so
+a streamed answer is paid for as completely as a buffered one.
+
+```bash
+bun run dev                          # wrangler dev for apps/gate
+```
+
+## Layout
+
+```
+apps/crew            Crew runtime (Node/Bun) and page (React)
+apps/crew-backend    Crew names, orgs and invites — Cloudflare Worker, D1, Durable Objects
+packages/crew-ai     the `crew` npm package: bundled runtime + built page
+packages/ens         ENSv2 registries, resolvers, EIP-7702 batching, name guard
+apps/gate            EdgeRouter — the x402 gate, a Cloudflare Worker
+packages/core        attenuation algebra and funding rules, no dependencies
+packages/sdk         x402 client, wallets, Circle Gateway, tabs, budget authority
+packages/dsh         DeepSeek Harness provider plugin for EdgeRouter
+docs/                product thesis, findings, specs
+```
 
 ## Checks
 
 ```bash
-bun run check          # every offline check — 364 of them
+bun run check          # every offline check
 bun run typecheck
-bun run dev            # wrangler dev
-
-bun run wallet         # address | balance | watch | sweep | export
-bun run authority      # a budget authority on loopback
 ```
 
 Anything that spends is separate and run by hand, because it spends:
 
 ```bash
+bun run arc-pay-check          # one payment on Arc through Circle Gateway
 bun run pay-check              # one Hedera payment
 bun run evm-pay-check          # one EIP-3009 payment
-bun run fund-check             # proves auto account creation
 bun run delegate-live-check    # a keyless sub-agent, to its limit
-bun run live-check             # the DSH adapter, end to end
+bun run ens-check              # ENSv2 names on Sepolia
+bun run ens-guard-check        # the name guard against the real registry, reads only
+bun run ens-revoke-check       # a revoked agent cannot pay
 ```
 
-`packages/core` has no dependencies on purpose. The claim the whole product
-rests on — that a delegated budget can only narrow — is checked against random
-trees and random caveat orders, with no network, no chain, and no API key.
+`packages/core` has no dependencies on purpose. The claim the budgets rest on —
+that a delegated budget can only narrow — is checked against random trees and
+random caveat orders, with no network, no chain and no API key.
 
 ## Status
 
-The full loop works and has been paid for on two chains. What is not done:
-mainnet (testnets only, deliberately), an EVM sweep path exercised end to end,
-and a way to drive delegation from the Desktop UI rather than the CLI.
+Testnets only, deliberately: Arc testnet for payments, Ethereum Sepolia for
+names. Keep working money in a crew, not savings.
 
 Details in [docs/PROJECTS.md](docs/PROJECTS.md).
