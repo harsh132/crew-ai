@@ -54,9 +54,8 @@ const ARC: Omit<FundingRoute, 'depositor'> = {
 /**
  * How a person funds this crew from their own wallet, if they can.
  *
- * Null everywhere but Arc, and that is honest rather than unfinished. Hedera
- * testnet hbar comes from a faucet and there is no main wallet holding it;
- * Base Sepolia would be a plain transfer, which the address on screen already
+ * Null everywhere but Arc, and that is honest rather than unfinished. Base
+ * Sepolia would be a plain transfer, which the address on screen already
  * describes. Offering a Connect Wallet button that leads to neither would be
  * worse than not offering one.
  */

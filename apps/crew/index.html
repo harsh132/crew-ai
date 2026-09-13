@@ -1,20 +1,33 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Crew</title>
     <!--
-      IBM Plex Mono, which the theme is set in. Preconnected because it is the
-      only web font and a flash of the fallback is the whole interface changing
-      shape, not one heading.
+      Both schemes. Declared here as well as in the stylesheet so native
+      controls and scrollbars match before it loads.
     -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-    />
+    <meta name="color-scheme" content="light dark" />
+    <!--
+      Stamped before first paint so a remembered dark choice never flashes
+      white. The person's pick from the bar's toggle wins; otherwise the
+      operating system's. src/lib/theme.ts keeps it current after this.
+    -->
+    <script>
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem('crew.theme');
+        } catch (error) {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/svg+xml" href="/crewai-mark.svg" />
+    <title>Crew AI</title>
   </head>
   <body>
     <div id="root"></div>

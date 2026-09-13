@@ -8,7 +8,8 @@
     "migrate:local": "wrangler d1 migrations apply crew-backend --local",
     "migrate:remote": "wrangler d1 migrations apply crew-backend --remote",
     "deploy": "wrangler deploy",
-    "privy-check": "bun --env-file=.dev.vars privy-check.ts"
+    "privy-check": "bun --env-file=.dev.vars privy-check.ts",
+    "register-crewai": "bun --env-file=.dev.vars register-crewai.ts"
   },
   "dependencies": {
     "@privy-io/node": "0.34.0",

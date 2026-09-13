@@ -58,8 +58,7 @@ export const WalletPicker = ({ route }: { route: FundingRoute }) => {
 
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         A browser extension, WalletConnect, or an email — whichever you have. Or send {route.tokenSymbol} on{' '}
-        {route.chainName} to <span className="font-mono break-all">{route.depositor}</span>, though that leaves
-        it undeposited and depositing is what makes it spendable.
+        {route.chainName} to <span className="font-mono break-all">{route.depositor}</span> directly.
       </p>
 
       {error ? <p className="text-[11px] text-destructive">{error}</p> : null}

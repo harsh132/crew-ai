@@ -4,7 +4,7 @@
  * Shown where the agent's own work is shown, not in a notification tray, for
  * the same reason the outcome pills live there: the request only makes sense
  * beside what it was spent on. Somebody deciding whether to grant another
- * quarter of an hbar wants the ledger and the last few steps on screen, and a
+ * few cents wants the ledger and the last few steps on screen, and a
  * card that pulls them away from both is asking them to decide blind.
  *
  * The amount is editable and pre-filled with what was asked. Approving is not
@@ -19,7 +19,7 @@ import { money, toMinor, when } from '@/lib/format';
 import { approve, decline, type Agent, type BudgetRequest } from '@/api';
 
 export const BudgetRequestCard = ({ request, agent }: { request: BudgetRequest; agent: Agent }) => {
-  const unit = agent.network.startsWith('hedera:') ? 'ℏ' : 'USDC';
+  const unit = 'USDC';
   const [amount, setAmount] = useState(money(agent.network, request.askedMinor).split(' ')[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

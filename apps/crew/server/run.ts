@@ -252,9 +252,7 @@ export const runTask = async (runtime: Runtime, agent: Agent, prompt: string): P
         'stop when the task is done.',
         `You have ${formatAmount(agent.network, BigInt(agent.budgetMinor) - BigInt(agent.spentMinor))} left ` +
           `of ${formatAmount(agent.network, BigInt(agent.budgetMinor))}, and ` +
-          (agent.network.startsWith('hedera:')
-            ? 'a call costs roughly a fortieth of an hbar.'
-            : 'a call is charged for the tokens it uses — usually a small fraction of a cent.'),
+          'a call is charged for the tokens it uses — usually a small fraction of a cent.',
         /*
           Told what it may do about running out, because the prompt used to say
           the budget "cannot be raised" — true before `request_budget` existed
@@ -415,7 +413,7 @@ export const runTask = async (runtime: Runtime, agent: Agent, prompt: string): P
 
         An agent almost never lands on zero — it stops when the next call costs
         more than the remainder, which is usually a small amount still sitting
-        there. Reporting the budget as spent when a tenth of a hbar remains is
+        there. Reporting the budget as spent when a fraction of a cent remains is
         the kind of small lie that makes someone go looking for the missing
         money.
       */

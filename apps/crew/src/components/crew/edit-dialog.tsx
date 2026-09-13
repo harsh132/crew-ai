@@ -47,8 +47,7 @@ export const EditDialog = ({
   open: boolean;
   onClose: () => void;
 }) => {
-  const hedera = agent.network.startsWith('hedera:');
-  const unit = hedera ? 'ℏ' : 'USDC';
+  const unit = 'USDC';
 
   /*
     Seeded from the agent and keyed on it by the caller, so switching agents

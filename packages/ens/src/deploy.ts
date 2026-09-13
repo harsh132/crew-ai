@@ -171,6 +171,52 @@ const deployProxy = async (
   }
 };
 
+/** A proxy deployment, described rather than sent. */
+export type ProxyDeployment = { implementation: Address; salt: bigint; data: `0x${string}` };
+
+/**
+ * A proxy's address, and the call that would deploy it — without sending it.
+ *
+ * For batching. A batch that deploys a contract and then registers a name
+ * pointing at it needs the address before the deployment exists, and the
+ * factory's simulation returns exactly that. The address depends on the
+ * deployer, so the call must be sent by the same account that simulated it —
+ * which an EIP-7702 batch is, since its inner calls come from the account
+ * itself.
+ *
+ * `call` is null when the salt is already deployed; the address is then the
+ * existing proxy, found the same way `deployProxy` finds it.
+ */
+export const planProxy = async (
+  clients: Clients,
+  deployment: ProxyDeployment,
+): Promise<{ address: Address; call: { to: Address; data: `0x${string}` } | null }> => {
+  const args = [deployment.implementation, deployment.salt, deployment.data] as const;
+  try {
+    const { result } = await clients.public.simulateContract({
+      address: ENS.verifiableFactory,
+      abi: factoryAbi,
+      functionName: 'deployProxy',
+      args,
+      account: clients.wallet.account!,
+    });
+    return {
+      address: result,
+      call: {
+        to: ENS.verifiableFactory,
+        data: encodeFunctionData({ abi: factoryAbi, functionName: 'deployProxy', args }),
+      },
+    };
+  } catch (error) {
+    const existing = await findExistingProxy(clients, {
+      salt: deployment.salt,
+      deployer: clients.wallet.account!.address,
+    });
+    if (existing) return { address: existing, call: null };
+    throw error;
+  }
+};
+
 /**
  * Deploys a resolver owned by `owner`, which it may actually write records to.
  *
@@ -180,17 +226,24 @@ const deployProxy = async (
  */
 export const deployResolver = async (
   clients: Clients,
-  options: { owner: Address; version?: bigint; grants?: readonly Grant[] } = { owner: '0x' as Address },
-): Promise<{ address: Address; hash: Hash | null }> =>
-  deployProxy(clients, {
-    implementation: ENS.permissionedResolverImpl,
-    salt: resolverSaltFor(options.owner, options.version ?? 0n),
-    data: encodeFunctionData({
-      abi: resolverInitAbi,
-      functionName: 'initialize',
-      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)], []],
-    }),
-  });
+  options: ResolverOptions = { owner: '0x' as Address },
+): Promise<{ address: Address; hash: Hash | null }> => deployProxy(clients, resolverDeployment(options));
+
+/** A resolver's address and deploying call, for sending inside a batch. */
+export const planResolver = (clients: Clients, options: ResolverOptions) =>
+  planProxy(clients, resolverDeployment(options));
+
+type ResolverOptions = { owner: Address; version?: bigint; grants?: readonly Grant[] };
+
+const resolverDeployment = (options: ResolverOptions): ProxyDeployment => ({
+  implementation: ENS.permissionedResolverImpl,
+  salt: resolverSaltFor(options.owner, options.version ?? 0n),
+  data: encodeFunctionData({
+    abi: resolverInitAbi,
+    functionName: 'initialize',
+    args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)], []],
+  }),
+});
 
 /*
   Refused before it reaches a deployment. A bitmap with a bit outside a role
@@ -229,17 +282,24 @@ const registryInitAbi = parseAbi([
  */
 export const deployRegistry = async (
   clients: Clients,
-  options: { name: string; owner: Address; version?: bigint; grants?: readonly Grant[] },
-): Promise<{ address: Address; hash: Hash | null }> =>
-  deployProxy(clients, {
-    implementation: ENS.userRegistryImpl,
-    salt: registrySaltFor(options.name, options.version ?? 0n),
-    data: encodeFunctionData({
-      abi: registryInitAbi,
-      functionName: 'initialize',
-      args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)]],
-    }),
-  });
+  options: RegistryOptions,
+): Promise<{ address: Address; hash: Hash | null }> => deployProxy(clients, registryDeployment(options));
+
+/** A registry's address and deploying call, for sending inside a batch. */
+export const planRegistry = (clients: Clients, options: RegistryOptions) =>
+  planProxy(clients, registryDeployment(options));
+
+type RegistryOptions = { name: string; owner: Address; version?: bigint; grants?: readonly Grant[] };
+
+const registryDeployment = (options: RegistryOptions): ProxyDeployment => ({
+  implementation: ENS.userRegistryImpl,
+  salt: registrySaltFor(options.name, options.version ?? 0n),
+  data: encodeFunctionData({
+    abi: registryInitAbi,
+    functionName: 'initialize',
+    args: [[{ account: options.owner, roleBitmap: ALL_ROLES }, ...checkedGrants(options.grants)]],
+  }),
+});
 
 /**
  * Points a name at a resolver and a registry.

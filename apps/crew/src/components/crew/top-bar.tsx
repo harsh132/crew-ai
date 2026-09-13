@@ -1,87 +1,108 @@
 /**
- * The bar across the top: what this is, and who you are on it.
+ * The bar across the top: what this is, whose crew it is, and who you are.
  *
- * Two things, at opposite ends, because they answer opposite questions. The
- * left says what application you are looking at. The right says which wallet is
- * paying for it — which on a screen where every reply costs money is the more
- * useful of the two, and belongs where a person already looks for it.
- *
- * It replaces a small plus button tucked beside the balance in the rail. That
- * button worked and nobody would ever have found it: funding is the first thing
- * a new user has to do and the thing an established one comes back to, and both
- * were behind an icon whose meaning you had to already know.
+ * Left to right it answers three questions in the order a person asks them.
+ * The brand says which application. The switcher says whose crew — your own or
+ * an organization's — which decides every name, budget and member below it.
+ * The wallet, at the far end, says who is paying.
  */
-import { ChevronDown, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronDown, Moon, Sun, Wallet as WalletIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { setTheme, useTheme } from '@/lib/theme';
 import { shortAddress, useWallet } from '@/lib/use-wallet';
 import { cn } from '@/lib/utils';
+import type { Org } from '@/lib/orgs';
 import type { State } from '@/api';
+import { WorkspaceSwitcher, type Workspace } from './workspace-switcher';
+import { CrewMark } from './crew-mark';
 
-/**
- * The wordmark.
- *
- * Drawn rather than an image file so it takes the theme with it — the app is
- * dark by default and a baked-in logo is the one element that would not follow
- * a switch to light.
- */
+/** The wordmark. Drawn rather than an image, so it follows light and dark with everything else. */
 const Brand = () => (
   <div className="flex items-center gap-2">
-    <span
-      aria-hidden
-      className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground"
-    >
-      C
-    </span>
-    <span className="text-sm font-semibold tracking-tight">
-      Crew<span className="text-muted-foreground"> AI</span>
-    </span>
+    <CrewMark />
+    <span className="text-sm font-medium tracking-tight">Crew AI</span>
   </div>
 );
 
-export const TopBar = ({ state, onWallet }: { state: State; onWallet: () => void }) => {
+export const TopBar = ({
+  state,
+  onWallet,
+  workspace,
+  orgs,
+  onWorkspace,
+  onCreateOrg,
+}: {
+  state: State;
+  onWallet: () => void;
+  workspace: Workspace;
+  orgs: Org[];
+  onWorkspace: (workspace: Workspace) => void;
+  onCreateOrg: () => void;
+}) => {
   const { account, ensName, connecting, connect, ready } = useWallet();
+  const theme = useTheme();
 
   /*
     Connecting goes straight to Privy's modal rather than through a dialog of
     ours first. Privy renders into its own portal, and opening it from inside a
-    Radix dialog leaves two focus traps fighting over the same email field — the
-    browser console says so out loud. Our dialog is for depositing, which only
-    means anything once a wallet is attached, so it is what the connected pill
-    opens instead.
+    Radix dialog leaves two focus traps fighting over the same email field.
+    Our dialog is for depositing, which only means anything once a wallet is
+    attached, so it is what the connected pill opens instead.
   */
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-card px-4">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-4">
       <Brand />
 
       {/*
-        The network, small and beside the brand. It decides what every amount on
-        this screen is denominated in, and a person who has switched chains and
-        forgotten is otherwise reading dollars as hbar.
+        Organizations need the crew backend. Without one configured the switcher
+        would offer a create button that can only fail, so it is not offered.
       */}
-      <span className="hidden rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
-        {state.network}
-      </span>
+      {state.crewBackend ? (
+        <WorkspaceSwitcher
+          workspace={workspace}
+          orgs={orgs}
+          account={state.account}
+          onSelect={onWorkspace}
+          onCreate={onCreateOrg}
+        />
+      ) : null}
 
       <div className="ml-auto flex items-center gap-2">
+        {/*
+          Labelled with what it does, not what is showing: the icon is the
+          mode a click switches to, the way most apps draw this control.
+        */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className={cn(
+            'grid size-8 place-items-center rounded-full border text-muted-foreground transition-colors',
+            'hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+          )}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun className="size-4" aria-hidden /> : <Moon className="size-4" aria-hidden />}
+        </button>
+
         {account ? (
           <button
             onClick={onWallet}
             className={cn(
-              'flex items-center gap-2 rounded-full border bg-background/60 py-1 pr-2 pl-2.5 transition-colors',
-              'hover:bg-accent/50',
+              'flex h-8 items-center gap-2 rounded-full border py-1 pr-2 pl-3 transition-colors',
+              'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
             )}
             title={account}
           >
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-            <span className={cn('text-xs', ensName ? 'font-medium' : 'font-mono')}>
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
+            <span className={cn('text-sm', ensName ? '' : 'font-mono text-xs')}>
               {ensName ?? shortAddress(account)}
             </span>
-            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           </button>
         ) : (
-          <Button size="sm" className="h-8" disabled={!ready || connecting} onClick={connect}>
-            <WalletIcon className="size-3.5" />
-            {connecting ? 'Connecting…' : 'Connect Wallet'}
+          <Button size="sm" disabled={!ready || connecting} onClick={connect}>
+            <WalletIcon className="size-3.5" aria-hidden />
+            {connecting ? 'Connecting…' : 'Connect wallet'}
           </Button>
         )}
       </div>

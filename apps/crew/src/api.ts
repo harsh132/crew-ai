@@ -100,22 +100,69 @@ export type BudgetRequest = {
 /** One permission the runtime enforces, as it describes itself. */
 export type PermissionInfo = { name: string; label: string; detail: string; default: boolean };
 
+/** What the wallet signs to unlock the crew. Sent by the runtime, which verifies the same text. */
+export type UnlockTemplate = {
+  domain: { name: string; version: string };
+  types: { CrewSigner: { name: string; type: string }[] };
+  primaryType: 'CrewSigner';
+  purpose: string;
+  warning: string;
+};
+
+/**
+ * A runtime with no key yet, waiting for a signature to derive one from.
+ *
+ * Deliberately thin: nothing about agents, money or names exists until there is
+ * a key, and a page that received empty versions of those would render a crew
+ * that is not there.
+ */
+export type LockedState = {
+  locked: true;
+  network: string;
+  privyAppId: string | null;
+  crewBackend: string | null;
+  funding: FundingRoute | null;
+  unlock: UnlockTemplate;
+};
+
 export type State = {
+  locked: false;
+  /** The wallet this crew's key was derived from, or null for a generated key. */
+  signer: { derivedFrom: string | null };
   gate: string;
   network: string;
   account: string;
   spendable: string;
+  /** Total USDC: spendable (Gateway and tab) plus what is still in the wallet. */
+  total: string;
   spendableMinor: string;
   held?: string;
   /** False until the wallet can actually pay for something. */
   funded: boolean;
   /** Why not, when it cannot. `empty` needs money; `undeposited` needs one transaction. */
   shortfall?: 'empty' | 'undeposited';
+  /**
+   * The wallet balance from which USDC is deposited into Gateway automatically,
+   * formatted. Null when auto-deposit is off or does not apply, and the manual
+   * deposit is offered instead.
+   */
+  autoDepositFrom: string | null;
+  /** A deposit into Gateway is being sent right now. */
+  depositing: boolean;
+  /**
+   * Sepolia ETH that pays for agent names, held by the crew signer. Null when
+   * naming is off. `low` means likely not enough for one more name.
+   */
+  nameGas: { address: string; balance: string; lowBelow: string; ask: string; low: boolean } | null;
   naming: boolean;
   funding: FundingRoute | null;
   /** Public client id for Privy. Null turns wallet connection off entirely. */
   privyAppId: string | null;
-  root: string;
+  /** The crew backend, where organizations are created and kept. Null turns organizations off. */
+  crewBackend: string | null;
+  /** The name agents are minted under — the person's own. Null until they choose one. */
+  root: string | null;
+  identity: { name: string; registry: string; resolver: string } | null;
   models: string[];
   permissions: PermissionInfo[];
   file: string;
@@ -200,12 +247,24 @@ export const removeProject = async (id: string): Promise<void> => {
  */
 export const refreshFunding = () => post('/api/funding/refresh');
 
+/** Hands the runtime two signatures of the unlock message; it derives and keeps the key. */
+export const unlockSigner = (account: string, signatures: string[]) =>
+  post('/api/signer/unlock', { account, signatures });
+
+/** Tells the runtime to name agents under this name. It checks the chain before agreeing. */
+export const claimIdentity = (name: string) => post('/api/identity', { name });
+
 export const approve = (id: string, grantedMinor: string) =>
   post(`/api/requests/${id}/approve`, { grantedMinor });
 export const decline = (id: string) => post(`/api/requests/${id}/decline`);
 
 export const halt = (id: string) => post(`/api/agents/${id}/stop`);
 export const fire = (id: string) => post(`/api/agents/${id}/fire`);
+/**
+ * Deletes an agent. One not yet revoked is revoked on chain first, so it cannot
+ * spend again; the runtime refuses while the agent is working.
+ */
+export const removeAgent = (id: string) => post(`/api/agents/${id}/remove`);
 
 /**
  * The live roster.
@@ -215,8 +274,8 @@ export const fire = (id: string) => post(`/api/agents/${id}/fire`);
  * and the runtime disagree about what happened, and no user could ever perceive
  * the difference.
  */
-export const useCrew = (): { state: State | null; connected: boolean; log: string[] } => {
-  const [state, setState] = useState<State | null>(null);
+export const useCrew = (): { state: State | LockedState | null; connected: boolean; log: string[] } => {
+  const [state, setState] = useState<State | LockedState | null>(null);
   const [connected, setConnected] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const source = useRef<EventSource | null>(null);
@@ -229,7 +288,7 @@ export const useCrew = (): { state: State | null; connected: boolean; log: strin
     events.onerror = () => setConnected(false);
     events.onmessage = (message) => {
       const event = JSON.parse(message.data) as
-        | { type: 'state'; state: State }
+        | { type: 'state'; state: State | LockedState }
         | { type: 'log'; text: string }
         | { type: 'delta'; agentId: string; n: number; text: string }
         | { type: 'step' | 'status' };
@@ -249,7 +308,7 @@ export const useCrew = (): { state: State | null; connected: boolean; log: strin
           positions are not.
         */
         setState((previous) => {
-          if (!previous) return previous;
+          if (!previous || previous.locked) return previous;
           return {
             ...previous,
             agents: previous.agents.map((agent) => {

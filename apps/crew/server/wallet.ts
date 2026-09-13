@@ -6,20 +6,19 @@
  * limit mean something. An agent with its own key has a limit it could raise;
  * an agent with a capability has one it cannot reach.
  *
- * Three networks, three ways of asking "can this pay", because they genuinely
- * differ. Hedera holds hbar in an account; Base holds USDC at an address; Arc
- * pays from a balance deposited into Circle's GatewayWallet, where holding the
- * token and being able to spend it are different facts.
+ * USDC on EVM chains only, asked two ways because they genuinely differ: Base
+ * holds USDC at an address; Arc pays from a balance deposited into Circle's
+ * GatewayWallet, where holding the token and being able to spend it are
+ * different facts.
  */
 import {
   evmSigner,
-  hederaSigner,
   isGatewayNetwork,
   gatewayFunding,
-  loadOrCreateEvmWallet,
-  loadOrCreateWallet,
+  openEvmWallet,
   type PaymentSigner,
 } from '../../../packages/sdk/src/index';
+import { readSharedWallet } from '../../../packages/sdk/src/wallet/store';
 
 /**
  * Why a wallet cannot pay yet, in the terms the fix differs by.
@@ -78,33 +77,20 @@ const tabBalance = async (gate: string, network: string, address: string): Promi
 };
 
 export const openWallet = async (network: string, gate?: string): Promise<OpenWallet> => {
-  if (network.startsWith('hedera:')) {
-    const { wallet } = loadOrCreateWallet({ network });
-    const funding = await wallet.refresh();
-    /*
-      An unfunded Hedera wallet has no account id, because an account does not
-      exist until something is sent to the address. So the address is what the
-      user is shown and what they fund; the id appears afterwards, which is
-      itself the confirmation that it worked.
-    */
-    if (!funding.funded) {
-      return {
-        signer: wallet.signer(),
-        account: wallet.evmAddress,
-        spendableMinor: 0n,
-        network,
-        shortfall: 'empty',
-      };
-    }
-    return {
-      signer: wallet.signer(),
-      account: funding.accountId ?? wallet.evmAddress,
-      spendableMinor: funding.balanceMinor,
-      network,
-    };
+  if (!network.startsWith('eip155:')) {
+    throw new Error(`Crew pays in USDC on EVM chains; ${network} is not one. Unset CREW_NETWORK to use Arc.`);
   }
 
-  const { wallet } = loadOrCreateEvmWallet({ network });
+  /*
+    Opened, never generated. `loadOrCreateEvmWallet` answers a missing file
+    with a fresh random key, and this runs on a timer — so a key moved aside
+    while the runtime was up used to be replaced within twenty seconds by one
+    nobody could ever re-derive. The crew's key comes from a signature
+    (signer.ts) or not at all.
+  */
+  const stored = readSharedWallet();
+  if (!stored) throw new Error('no signer key — unlock the crew with your wallet');
+  const wallet = openEvmWallet({ privateKey: `0x${stored.privateKey}`, address: stored.address, network });
   const privateKey = wallet.exportPrivateKey();
   const signer = evmSigner({ privateKey, network });
 

@@ -9,6 +9,8 @@
 export type Env = {
   DB: D1Database;
   ORG_SETUP: DurableObjectNamespace<import('./setup').OrgSetup>;
+  NAME_SETUP: DurableObjectNamespace<import('./user-setup').NameSetup>;
+  MEMBER_SETUP: DurableObjectNamespace<import('./member-setup').MemberNameSetup>;
 
   /** Public. Also shipped to browsers. */
   PRIVY_APP_ID: string;
@@ -29,4 +31,9 @@ export type Env = {
    */
   ENS_MANAGER_PRIVATE_KEY: string;
   SEPOLIA_RPC: string;
+  /**
+   * Sepolia wei a new user's Crew signer is topped up to, so it can issue its
+   * first agent names. Paid from the manager key; "0" turns it off.
+   */
+  USER_GAS_WEI?: string;
 };

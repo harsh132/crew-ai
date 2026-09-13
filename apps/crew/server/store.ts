@@ -16,7 +16,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Project } from './projects';
 
-const HOME = join(homedir(), '.edgerouter');
+/*
+  The same home the wallet store uses, `EDGEROUTER_HOME` included. They used to
+  disagree — the key followed the variable and the crew did not — so a runtime
+  pointed at a scratch home read its own key and wrote someone else's crew.
+*/
+const HOME = process.env.EDGEROUTER_HOME ?? join(homedir(), '.edgerouter');
 const FILE = join(HOME, 'crew.json');
 
 /** What an agent is doing right now. Not persisted as truth — see `load`. */
@@ -135,6 +140,15 @@ export type Crew = {
    * the convenience of denormalising. An agent holds ids.
    */
   projects?: Project[];
+  /**
+   * The person's own name, which every agent is named beneath.
+   *
+   * `alex.crewai.eth`, issued by the crew backend and owned by their wallet.
+   * Absent until they choose one; agents hired before then have no name. Kept
+   * with its registry and resolver because those are what minting needs, and
+   * re-deriving them is two chain reads per hire for facts that do not change.
+   */
+  identity?: { name: string; registry: string; resolver: string };
 };
 
 const EMPTY: Crew = { version: 1, agents: [], projects: [] };

@@ -1,138 +1,172 @@
 /*
-  Ender's design language, with blue where its green was.
+  Crew's surface: flat, quiet, and blue in exactly one place.
 
-  Transcribed from `wallet2/src/design/colors.ts`, which is itself a
-  transcription of that project's `tokens/colors.css`. Names are mapped onto the
-  shadcn variables this app's components already use rather than renamed, so the
-  components did not have to change — only what the tokens resolve to.
+  Chosen by the person who uses it, from a mockup: white panels, hairline
+  borders, one blue for the action that matters, and nothing decorative. The
+  previous theme was a true-black glass look; this replaces it rather than
+  softening it.
 
-  ## One palette, not two
+  ## Why flat suits this screen
 
-  Ender is dark-only and true-black, and says so outright: "this palette is a
-  fixed dark with a single accent, so there is nothing to pick." The light block
-  that used to live here is gone rather than left unreachable, because a scheme
-  nothing selects is a scheme nobody maintains, and the first person to add a
-  colour would have to guess at values for a theme they cannot see.
+  Every reply here costs money and every number is a balance. A surface that
+  competes with that — glow, glass, a signal colour on every control — makes the
+  money harder to read. So depth comes from two or three steps of near-white and
+  a hairline, and blue is reserved for primary actions, selection and links.
 
-  ## Blue
+  ## Light and dark
 
-  Ender's accent is `#3dff9a`, a signal green at luminance 0.748 — 15.15:1
-  against the canvas. No blue reaches that; blue is intrinsically darker, and
-  the ones that do get there have turned into cyan or white. `#3dc9ff` is the
-  closest thing that still reads as blue: 10.44:1 on the canvas and 10.11:1 for
-  the near-black ink that sits on top of it, so both directions clear AA
-  comfortably. Computed rather than eyeballed, the way Ender's own
-  `check-contrast.mjs` does it.
+  Both. The operating system decides until the person uses the toggle in the
+  bar; after that their choice is remembered (src/lib/theme.ts). Either way the
+  page carries `data-theme`, stamped before first paint by index.html, and that
+  attribute is the only thing this file switches on. Dark mode is the same
+  system rather than a separate look — the same hierarchy, with the surface
+  steps inverted.
 
-  It also happens to keep the `3d` the green opened with, which is a coincidence
-  worth keeping.
+  ## Tokens
 
-  ## Glass
+  The variable names are shadcn's, because the components already read them.
+  Four are added for status (`success`, `info` and their soft washes), which the
+  mockup uses for badges and the "name is available" line and the old palette
+  had no word for.
 
-  The recurring recipe there is 6% white fill, a 14% white border and a backdrop
-  blur. `--secondary` and `--accent` carry the two fills, `--input` the border;
-  the blur is applied by the components that want it, since a token cannot hold
-  a filter.
+  Contrast, checked: body text 16.9:1 and secondary text 6.4:1 on white; white
+  on the accent 4.7:1. In dark, body 14.6:1 and secondary 7.1:1 on the canvas.
 */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
 /*
-  Kept so `dark:` utilities already in the components still match. There is only
-  one scheme now, and the attribute is always present — this makes those
-  utilities a no-op rather than a source of dead styling.
+  `dark:` utilities follow `data-theme`, the same signal the palette switches
+  on — so a component's own dark tweaks and the tokens never disagree.
 */
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 :root {
-  /* --- canvas and ink ------------------------------------------------------
-     Ender's ladder, tinted a hair blue where its own leans a hair green. */
-  --background: #08090a;
-  --card: #131315;
-  --popover: #131315;
-  --muted: #1c1c1e;
-  --sidebar: #0a0a0b;
+  color-scheme: light;
 
-  /* --- foreground ----------------------------------------------------------
-     White at Ender's four alphas, already multiplied by its 0.88 text
-     brightness. Left as rgba rather than flattened to hex so text keeps its
-     relationship to whatever surface is under it, which is the whole reason
-     the source expresses them as alphas. */
-  --foreground: rgba(255, 255, 255, 0.88);
-  --card-foreground: rgba(255, 255, 255, 0.88);
-  --popover-foreground: rgba(255, 255, 255, 0.88);
-  --muted-foreground: rgba(255, 255, 255, 0.546);
-  --sidebar-foreground: rgba(255, 255, 255, 0.88);
+  /* --- surfaces: the page, raised panels, selection ------------------------ */
+  --background: #ffffff;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --sidebar: #fafaf9;
+  --muted: #f4f4f2;
+  --accent: #efefed;
+  --secondary: #f4f4f2;
 
-  /* --- accent --------------------------------------------------------------- */
-  --primary: #3dc9ff;
-  --primary-foreground: #04121a;
-  --sidebar-primary: #3dc9ff;
-  --sidebar-primary-foreground: #04121a;
+  /* --- ink ------------------------------------------------------------------ */
+  --foreground: #141413;
+  --card-foreground: #141413;
+  --popover-foreground: #141413;
+  --sidebar-foreground: #141413;
+  --secondary-foreground: #141413;
+  --accent-foreground: #141413;
+  --muted-foreground: #5f5f5b;
 
-  /* --- glass ---------------------------------------------------------------- */
-  --secondary: rgba(255, 255, 255, 0.06);
-  --secondary-foreground: rgba(255, 255, 255, 0.88);
-  --accent: rgba(255, 255, 255, 0.1);
-  --accent-foreground: rgba(255, 255, 255, 0.88);
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: rgba(255, 255, 255, 0.88);
+  /* --- the one accent ------------------------------------------------------- */
+  --primary: #2f6fde;
+  --primary-foreground: #ffffff;
+  --sidebar-primary: #2f6fde;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #efefed;
+  --sidebar-accent-foreground: #141413;
 
-  /* --- signal --------------------------------------------------------------- */
-  --destructive: #ff5c5c;
-  --destructive-foreground: #1a0505;
+  /* --- status --------------------------------------------------------------- */
+  --info: #1f58c0;
+  --info-soft: #e8f0fd;
+  --success: #1c7a44;
+  --success-soft: #e5f3ea;
+  --destructive: #c7383a;
+  --destructive-foreground: #ffffff;
 
   /* --- lines ---------------------------------------------------------------- */
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.14);
-  --ring: rgba(61, 201, 255, 0.45);
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: rgba(61, 201, 255, 0.45);
+  --border: rgba(20, 20, 19, 0.1);
+  --input: rgba(20, 20, 19, 0.18);
+  --ring: rgba(47, 111, 222, 0.45);
+  --sidebar-border: rgba(20, 20, 19, 0.1);
+  --sidebar-ring: rgba(47, 111, 222, 0.45);
 
-  /* --- charts, from the accent outward -------------------------------------- */
-  --chart-1: #3dc9ff;
-  --chart-2: #63d5ff;
-  --chart-3: #22a8dd;
-  --chart-4: #1f6a85;
-  --chart-5: #5cc8ff;
+  --chart-1: #2f6fde;
+  --chart-2: #5b8ee8;
+  --chart-3: #1f58c0;
+  --chart-4: #9ab8f0;
+  --chart-5: #174494;
 
-  /*
-    12px, against the 6px this had before. Ender's ladder starts at 8 and runs
-    8/12/18/24/32, and shadcn derives its four steps from this one number:
-    sm 8, md 10, lg 12, xl 16. That lands on the bottom of Ender's range, which
-    is where an interface this dense belongs.
-  */
-  --radius: 0.75rem;
+  /* 8px: controls and rows. Cards and panels step up from it. */
+  --radius: 0.5rem;
 
   /*
-    IBM Plex Mono, which is what Ender is set in and most of why it looks the
-    way it does. Worth knowing this is the one judgement call in here that goes
-    beyond colour: it is a whole-interface change and a single line to undo.
-
-    Inter and JetBrains Mono were declared before and never loaded, so the app
-    was actually rendering in whatever the system had.
+    The platform's own sans. The mockup is set in a face this app cannot ship,
+    and the system face on each OS is the closest honest match — and costs no
+    request and no flash of a fallback. Monospace is kept for what is actually
+    data: addresses, amounts, names on chain.
   */
-  --font-sans: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace;
   --font-serif: ui-serif, Georgia, serif;
   --tracking-normal: 0em;
 
   /*
-    Shadow, on a true-black canvas, cannot do what it does on grey — there is
-    nothing darker to cast onto. Ender separates surfaces with a lighter fill
-    and a hairline instead, so these stay minimal and the work is done by
-    `--card` and `--border`.
+    Flat by default. Controls and in-flow surfaces carry no shadow at all; only
+    things that genuinely float — menus, dialogs — lift, with a real offset and
+    a soft blur.
   */
-  --shadow-color: #000000;
-  --shadow-opacity: 0.5;
-  --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.5);
-  --shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 16px 0 rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 8px 28px 0 rgba(0, 0, 0, 0.6);
-  --shadow-xl: 0 16px 48px 0 rgba(0, 0, 0, 0.65);
-  --shadow-2xl: 0 24px 64px 0 rgba(0, 0, 0, 0.7);
+  --shadow-color: rgba(20, 20, 19, 1);
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.06);
+  --shadow: 0 2px 6px rgba(20, 20, 19, 0.08);
+  --shadow-md: 0 8px 24px rgba(20, 20, 19, 0.1), 0 2px 6px rgba(20, 20, 19, 0.06);
+  --shadow-lg: 0 16px 40px rgba(20, 20, 19, 0.14), 0 4px 10px rgba(20, 20, 19, 0.06);
+  --shadow-xl: 0 24px 56px rgba(20, 20, 19, 0.16);
+  --shadow-2xl: 0 32px 72px rgba(20, 20, 19, 0.18);
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --background: #1b1b1a;
+    --card: #1f1f1e;
+    --popover: #262625;
+    --sidebar: #1b1b1a;
+    --muted: #2a2a28;
+    --accent: #2e2e2c;
+    --secondary: #2a2a28;
+
+    --foreground: #ededeb;
+    --card-foreground: #ededeb;
+    --popover-foreground: #ededeb;
+    --sidebar-foreground: #ededeb;
+    --secondary-foreground: #ededeb;
+    --accent-foreground: #ededeb;
+    --muted-foreground: #a3a39e;
+
+    --primary: #2f6fde;
+    --primary-foreground: #ffffff;
+    --sidebar-primary: #2f6fde;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #2e2e2c;
+    --sidebar-accent-foreground: #ededeb;
+
+    --info: #8ab4f8;
+    --info-soft: rgba(47, 111, 222, 0.18);
+    --success: #6fcf97;
+    --success-soft: rgba(28, 122, 68, 0.22);
+    --destructive: #ef6b6b;
+    --destructive-foreground: #1b1b1a;
+
+    --border: rgba(255, 255, 255, 0.09);
+    --input: rgba(255, 255, 255, 0.16);
+    --ring: rgba(138, 180, 248, 0.5);
+    --sidebar-border: rgba(255, 255, 255, 0.09);
+    --sidebar-ring: rgba(138, 180, 248, 0.5);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 4px 10px rgba(0, 0, 0, 0.3);
+    --shadow-xl: 0 24px 56px rgba(0, 0, 0, 0.55);
+    --shadow-2xl: 0 32px 72px rgba(0, 0, 0, 0.6);
 }
 
 @theme inline {
@@ -152,6 +186,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -173,9 +211,9 @@
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
 
   --shadow-2xs: var(--shadow-2xs);
@@ -194,7 +232,8 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-size: 14px;
     letter-spacing: var(--tracking-normal);
     overscroll-behavior: none;
   }
@@ -227,4 +266,10 @@
 
 .crew-breathe {
   animation: crew-breathe 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crew-breathe {
+    animation: none;
+  }
 }

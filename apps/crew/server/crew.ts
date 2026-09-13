@@ -43,8 +43,9 @@ import {
   setText,
   NONE,
   RECORD,
-  ROOT_NAME,
 } from '../../../packages/ens/src/index';
+import { registryAbi } from '../../../packages/ens/src/abi';
+import { ALL_ROLES } from '../../../packages/ens/src/deploy';
 import { load, save, type Agent, type Crew } from './store';
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, knownOnly } from './permissions';
 import {
@@ -57,6 +58,7 @@ import {
 import type { Root } from './tools';
 import { emit } from './events';
 import { openWallet, type OpenWallet } from './wallet';
+import { autoDeposit } from './auto-deposit';
 
 const AUTHORITY_PORT = Number(process.env.CREW_AUTHORITY_PORT ?? 8792);
 const AUTHORITY_URL = `http://127.0.0.1:${AUTHORITY_PORT}`;
@@ -68,8 +70,18 @@ export type Runtime = {
   /** Live connections, one per agent. Not persisted — rebuilt from the tree. */
   connections: Map<string, Connection>;
   crew: Crew;
-  /** Whether names can be minted. False when the root name owns no registry. */
+  /** Whether names can be minted. False with no root, or a root that owns no registry. */
   naming: boolean;
+  /**
+   * The name agents are minted beneath — the person's own, like
+   * `alex.crewai.eth`. Null until they choose one.
+   */
+  root: string | null;
+  /**
+   * The signer's Sepolia ETH, which pays for agent names. Null when naming is
+   * off, or before the first successful read.
+   */
+  nameGasWei: bigint | null;
   server: ServedAuthority;
   /**
    * The gate's tab terms on this network, or null when it keeps none.
@@ -133,6 +145,113 @@ const authorityFor = (wallet: OpenWallet, gate: string, tab: TabTerms | null): P
 export const publish = (runtime: Runtime): void => {
   save(runtime.crew);
   emit({ type: 'crew', agents: runtime.crew.agents });
+};
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+const weiFromEnv = (name: string, fallback: bigint): bigint => {
+  const value = process.env[name];
+  return value && /^\d+$/.test(value) ? BigInt(value) : fallback;
+};
+
+/**
+ * Below this much Sepolia ETH the page asks for a top-up.
+ *
+ * 0.001 ETH: an agent name with its generated avatar measured about 0.00055
+ * sent call by call at ~1 gwei, so this is the point where a second name is no
+ * longer certain. `CREW_NAME_GAS_LOW_WEI` overrides it.
+ */
+export const NAME_GAS_LOW_WEI = weiFromEnv('CREW_NAME_GAS_LOW_WEI', 1_000_000_000_000_000n);
+
+/**
+ * What the page asks for: 0.01 ETH, enough for well over a dozen agent names,
+ * so the request is not back after the next hire. `CREW_NAME_GAS_ASK_WEI`
+ * overrides it.
+ */
+export const NAME_GAS_ASK_WEI = weiFromEnv('CREW_NAME_GAS_ASK_WEI', 10_000_000_000_000_000n);
+
+/**
+ * The signer's Sepolia ETH balance.
+ *
+ * Null when naming is off — nothing needs the gas. Undefined when the read
+ * failed, so a caller can keep what it last knew rather than report an RPC
+ * hiccup as an empty wallet.
+ */
+const nameGasOf = async (naming: boolean): Promise<bigint | null | undefined> => {
+  if (!naming) return null;
+  try {
+    const ens = openEnsSigner();
+    return await ens.public.getBalance({ address: ens.address });
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Whether this crew's signer may register names in a registry.
+ *
+ * A simulated registration: it costs nothing, needs no gas, and fails exactly
+ * when a real one would — a missing role, a registry that is not what it
+ * claims, a signer that changed.
+ */
+const signerMayRegister = async (
+  ens: ReturnType<typeof openEnsSigner>,
+  registry: `0x${string}`,
+  resolver: string,
+): Promise<boolean> => {
+  try {
+    await ens.public.simulateContract({
+      address: registry,
+      abi: registryAbi,
+      functionName: 'register',
+      args: [
+        'crew-probe',
+        ens.address,
+        ZERO_ADDRESS,
+        resolver as `0x${string}`,
+        ALL_ROLES,
+        BigInt(Math.floor(Date.now() / 1000) + 86_400),
+      ],
+      account: ens.account,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Adopts the person's own name as the parent of every agent name.
+ *
+ * Checked against the chain rather than taken from the page, three ways: the
+ * name owns a registry to mint in; it resolves to the wallet this crew's key was
+ * derived from, so a crew cannot be attached to somebody else's name; and this
+ * crew's signer may register in that registry — proved by simulating a
+ * registration, which costs nothing and fails exactly when a real one would.
+ */
+export const setIdentity = async (runtime: Runtime, name: string, derivedFrom: string | null): Promise<void> => {
+  const ens = openEnsSigner();
+  const client = createEnsClient();
+
+  const registry = await registryOf(ens.public, name);
+  if (!registry) throw new Error(`${name} owns no registry, so agents cannot be named under it`);
+
+  const [address, resolver] = await Promise.all([client.addressOf(name), client.resolverOf(name)]);
+  if (!resolver) throw new Error(`${name} has no resolver`);
+  if (derivedFrom && address?.toLowerCase() !== derivedFrom.toLowerCase()) {
+    throw new Error(`${name} points at ${address ?? 'nothing'}, not the wallet this crew was unlocked with`);
+  }
+
+  if (!(await signerMayRegister(ens, registry, resolver))) {
+    throw new Error(`this crew's signer is not allowed to name agents under ${name}`);
+  }
+
+  runtime.crew.identity = { name, registry, resolver };
+  runtime.root = name;
+  runtime.naming = true;
+  runtime.nameGasWei = (await nameGasOf(true)) ?? null;
+  publish(runtime);
+  emit({ type: 'log', text: `agents will be named under ${name}` });
 };
 
 /**
@@ -265,13 +384,29 @@ export const boot = async (options: { gate: string; network: string }): Promise<
     pointing at a chain where it was not should lose naming and keep spending
     rather than refuse to start.
   */
+  /*
+    The stored name is re-checked rather than trusted: it must still own the
+    registry it was saved with, and this crew's signer must still be allowed to
+    register there. A name whose roles were revoked, or a crew file carried to a
+    different signer, turns naming off at boot instead of failing at every hire.
+  */
+  const identity = crew.identity ?? null;
+  const root = identity?.name ?? null;
   let naming = false;
-  try {
-    const ens = openEnsSigner();
-    naming = (await registryOf(ens.public, ROOT_NAME)) !== null;
-  } catch {
-    naming = false;
+  if (identity) {
+    try {
+      const ens = openEnsSigner();
+      const registry = await registryOf(ens.public, identity.name);
+      naming =
+        registry !== null &&
+        registry.toLowerCase() === identity.registry.toLowerCase() &&
+        (await signerMayRegister(ens, registry, identity.resolver));
+    } catch {
+      naming = false;
+    }
+    if (!naming) emit({ type: 'log', text: `${identity.name} cannot be used by this crew's signer; names are off` });
   }
+  const nameGasWei = (await nameGasOf(naming)) ?? null;
 
   /*
     One top-up in flight, shared. Every agent on a crew hits an empty tab at
@@ -296,6 +431,8 @@ export const boot = async (options: { gate: string; network: string }): Promise<
     connections: new Map(),
     crew,
     naming,
+    root,
+    nameGasWei,
     server: undefined as unknown as ServedAuthority,
     tab,
     topUp(shortfall) {
@@ -367,11 +504,10 @@ export const boot = async (options: { gate: string; network: string }): Promise<
       An agent belongs to the network it was hired on, and switching networks
       must not quietly re-price it.
 
-      A budget is a bigint of the smallest unit, and the smallest unit is not
-      the same size twice: `15000000` is 0.15 hbar and also 15 USDC. Attaching a
-      Hedera agent against an Arc wallet would either commit fifteen dollars to
-      something funded with eight cents, or fail with a message about budgets
-      that says nothing about the actual problem. So it is skipped, and left
+      Its budget and its name were set against another chain's wallet, and
+      attaching it here would spend this wallet's money on a delegation this
+      wallet never made, or fail with a message about budgets that says nothing
+      about the actual problem. So it is skipped, and left
       exactly as it was — its name, its spend and its history are all still
       true, they are simply true about another chain.
     */
@@ -435,10 +571,9 @@ export const hire = async (
     here, while it is still a form with a number in it.
   */
   /*
-    Only agents on this network, for the same reason `boot` skips the others: a
-    budget is a bigint of the smallest unit, and `15000000` is 0.15 hbar and
-    also 15 USDC. Summing across chains would price a Hedera crew in dollars and
-    refuse every hire against a wallet that has plenty.
+    Only agents on this network, for the same reason `boot` skips the others:
+    budgets promised on another chain are drawn from another wallet, and
+    counting them here would refuse hires against a wallet that has plenty.
   */
   const promised = runtime.crew.agents
     .filter((existing) => existing.status !== 'revoked' && existing.network === runtime.wallet.network)
@@ -468,14 +603,15 @@ export const hire = async (
     ...(params.header ? { header: params.header } : {}),
   };
 
-  if (runtime.naming) {
-    emit({ type: 'log', text: `minting ${label}.${ROOT_NAME} …` });
+  if (runtime.naming && runtime.root) {
+    emit({ type: 'log', text: `minting ${label}.${runtime.root} …` });
     try {
       const ens = openEnsSigner();
       const named = await ensureAgentName(
         { public: ens.public, wallet: ens.wallet },
         {
           label,
+          parent: runtime.root,
           owner: ens.address,
           /*
             Leaf agents. One that can mint names beneath itself can hand out
@@ -764,6 +900,39 @@ export const fire = async (runtime: Runtime, id: string): Promise<void> => {
 };
 
 /**
+ * Deletes an agent from the crew.
+ *
+ * Only a revoked one. Revoking is what takes an agent's allowance and name
+ * away; this only takes it off the roster, so it is refused for anything still
+ * able to act — deleting a live agent's record would leave its capability
+ * working with nothing on screen to stop it.
+ */
+export const removeAgent = (runtime: Runtime, id: string): void => {
+  const agent = agentById(runtime, id);
+  if (agent.status !== 'revoked') throw new Error(`${agent.label} is not revoked; revoke it before deleting it`);
+  if (runtime.connections.has(id)) runtime.connections.delete(id);
+  runtime.crew.agents = runtime.crew.agents.filter((candidate) => candidate.id !== id);
+  publish(runtime);
+  emit({ type: 'log', text: `deleted ${agent.title ?? agent.label}` });
+};
+
+/**
+ * Deletes any agent: revoked first if it is not already, then removed.
+ *
+ * Revoking is the part that matters — it clears the name's address record and
+ * empties the allowance, so the agent cannot spend again anywhere. Removing it
+ * from the roster alone would hide an agent that can still act. Refused while
+ * it is running: a task mid-call should be stopped by a person first, not cut
+ * off by a delete they may not know is in flight.
+ */
+export const deleteAgent = async (runtime: Runtime, id: string, isRunning: (id: string) => boolean): Promise<void> => {
+  const agent = agentById(runtime, id);
+  if (isRunning(id)) throw new Error(`${agent.title ?? agent.label} is working; stop it before deleting it`);
+  if (agent.status !== 'revoked') await fire(runtime, id);
+  removeAgent(runtime, id);
+};
+
+/**
  * Re-reads the wallet, and rebuilds the tree when money has arrived.
  *
  * The wallet was a snapshot taken at boot, which made a deposit invisible until
@@ -783,6 +952,12 @@ export const fire = async (runtime: Runtime, id: string): Promise<void> => {
  * deposit that takes effect a minute later.
  */
 export const refreshFunding = async (runtime: Runtime, isBusy: () => boolean): Promise<boolean> => {
+  /*
+    USDC sitting in the wallet goes into Gateway first, so the read below sees
+    it as spendable in this same refresh rather than the next one.
+  */
+  await autoDeposit(runtime.wallet.network, () => publish(runtime));
+
   let wallet: OpenWallet;
   try {
     wallet = await openWallet(runtime.wallet.network, runtime.gate);
@@ -797,8 +972,21 @@ export const refreshFunding = async (runtime: Runtime, isBusy: () => boolean): P
     wallet.shortfall !== runtime.wallet.shortfall ||
     wallet.heldMinor !== runtime.wallet.heldMinor;
 
+  /*
+    Sepolia gas for agent names, read on the same tick. It changes on its own —
+    every name minted spends it, a top-up adds to it — and a change here has to
+    reach the page even when the USDC side did not move.
+  */
+  const gasBefore = runtime.nameGasWei;
+  const gas = await nameGasOf(runtime.naming);
+  if (gas !== undefined) runtime.nameGasWei = gas;
+  const gasChanged = runtime.nameGasWei !== gasBefore;
+
   runtime.wallet = wallet;
-  if (!changed) return false;
+  if (!changed) {
+    if (gasChanged) publish(runtime);
+    return gasChanged;
+  }
 
   if (wallet.spendableMinor > before && !isBusy()) {
     emit({ type: 'log', text: `wallet funded: ${formatAmount(wallet.network, wallet.spendableMinor)}` });

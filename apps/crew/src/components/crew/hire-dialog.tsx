@@ -82,8 +82,7 @@ export const HireDialog = ({ state, open, onClose }: { state: State; open: boole
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const hedera = state.network.startsWith('hedera:');
-  const unit = hedera ? 'ℏ' : 'USDC';
+  const unit = 'USDC';
 
   /*
     The sigil is drawn from the alias, not the name, and that is deliberate: the
@@ -179,7 +178,7 @@ export const HireDialog = ({ state, open, onClose }: { state: State; open: boole
             label="Alias"
             htmlFor="label"
             hint={
-              state.naming ? (
+              state.naming && state.root ? (
                 <>
                   Minted as{' '}
                   <span className="font-mono">
@@ -189,7 +188,7 @@ export const HireDialog = ({ state, open, onClose }: { state: State; open: boole
                   — a real name, which is what makes revoking it work. Fixed once minted.
                 </>
               ) : (
-                'Names are off on this chain, so this one is local only.'
+                'No name is set, so this agent is local only.'
               )
             }
           >
@@ -223,7 +222,7 @@ export const HireDialog = ({ state, open, onClose }: { state: State; open: boole
               id="budget"
               value={budget}
               inputMode="decimal"
-              placeholder={hedera ? '0.5' : '0.05'}
+              placeholder="0.05"
               onChange={(event) => setBudget(event.target.value)}
             />
           </Field>

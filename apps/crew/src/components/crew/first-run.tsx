@@ -18,12 +18,12 @@
 import { Copy, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { shortAddress } from '@/lib/use-wallet';
 import { ConnectWallet } from './connect-wallet';
 import type { State } from '@/api';
 
 /** Where testnet money comes from, per network. */
 const FAUCETS: Record<string, { name: string; url: string }> = {
-  'hedera:testnet': { name: 'the Hedera portal', url: 'https://portal.hedera.com/faucet' },
   'eip155:84532': { name: 'the Circle faucet', url: 'https://faucet.circle.com/' },
   'eip155:5042002': { name: 'the Circle faucet', url: 'https://faucet.circle.com/' },
 };
@@ -60,10 +60,16 @@ export const FirstRun = ({ state }: { state: State }) => {
       <div className="flex w-full max-w-md flex-col gap-5">
         <div>
           <h2 className="text-base font-semibold">
-            {undeposited ? 'Almost there' : 'Fund your crew'}
+            {undeposited ? (state.autoDepositFrom ? 'Depositing your USDC' : 'Almost there') : 'Fund your crew'}
           </h2>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            {undeposited ? (
+            {undeposited && state.autoDepositFrom ? (
+              <>
+                This wallet holds {state.held ?? 'USDC'}. Crew moves it into Circle&rsquo;s Gateway — which is
+                what payments are drawn from — by itself, keeping a few cents back for gas. Deposits start once
+                the wallet holds {state.autoDepositFrom}.
+              </>
+            ) : undeposited ? (
               <>
                 This wallet holds {state.held ?? 'USDC'}, and none of it is deposited into Circle&rsquo;s Gateway
                 — which is what payments are drawn from. Until it is deposited, the balance is visible and
@@ -79,13 +85,14 @@ export const FirstRun = ({ state }: { state: State }) => {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">
-            {state.network.startsWith('hedera:') ? 'Send hbar to' : 'Send USDC to'}
-          </span>
+          <span className="text-xs text-muted-foreground">Send USDC to</span>
           <Address value={state.account} />
-          <p className="text-[11px] text-muted-foreground">
-            on <span className="font-mono">{state.network}</span>
-          </p>
+          {state.signer.derivedFrom ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Made from your wallet <span className="font-mono">{shortAddress(state.signer.derivedFrom)}</span>. Sign
+              in with it on any computer to get this crew back.
+            </p>
+          ) : null}
         </div>
 
         {/*
@@ -116,22 +123,26 @@ export const FirstRun = ({ state }: { state: State }) => {
         {state.funding ? <ConnectWallet route={state.funding} /> : null}
 
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {undeposited
-            ? 'Deposit it, then this page will let you hire.'
-            : 'This page updates by itself once the money lands. Nothing else to do.'}
+          {state.depositing
+            ? 'Depositing into Gateway now. This page updates when it lands.'
+            : state.autoDepositFrom
+              ? 'Send USDC to this address and it is deposited into Gateway automatically. Nothing else to do.'
+              : undeposited
+                ? 'Deposit it, then this page will let you hire.'
+                : 'This page updates by itself once the money lands. Nothing else to do.'}
         </p>
 
         <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            {state.naming ? (
+            {state.naming && state.root ? (
               <>
                 Agents will be named under <span className="font-mono">{state.root}</span>, on chain, which is
                 what makes revoking one work.
               </>
             ) : (
               <>
-                Names are off on this chain, so agents will be local only — they will still spend under a
-                budget, but there is no name to revoke.
+                No name is set, so agents will be local only — they will still spend under a budget, but
+                there is no name to revoke.
               </>
             )}
           </p>

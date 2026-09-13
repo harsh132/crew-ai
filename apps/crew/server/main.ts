@@ -13,11 +13,15 @@
  *   POST /api/agents/:id/task  give it something to do
  *   POST /api/agents/:id/stop  interrupt it
  *   POST /api/agents/:id/fire  revoke it, on chain
+ *   POST /api/signer/unlock    derive the key from a wallet signature
+ *
+ * Until a key exists the runtime is locked: it serves the page and the unlock
+ * route and nothing else, because every other route is about money or names
+ * that hang off the key.
  *
  * Bound to loopback, for the obvious reason.
  */
 import { ARC_TESTNET, formatAmount } from '../../../packages/sdk/src/index';
-import { ROOT_NAME } from '../../../packages/ens/src/index';
 import {
   addProject,
   agentById,
@@ -25,12 +29,18 @@ import {
   fire,
   hire,
   refreshFunding,
+  deleteAgent,
   removeProject,
+  NAME_GAS_ASK_WEI,
+  NAME_GAS_LOW_WEI,
+  setIdentity,
   update,
   type Runtime,
 } from './crew';
 import { runTask, stop, isRunning } from './run';
-import { subscribe } from './events';
+import { emit, subscribe } from './events';
+import { autoDepositThreshold, isDepositing } from './auto-deposit';
+import { deriveSigner, saveSigner, storedSigner, UNLOCK } from './signer';
 import { MODELS } from './model';
 import { DEFAULT_PERMISSIONS, PERMISSIONS } from './permissions';
 import { FILE_PATH } from './store';
@@ -63,13 +73,19 @@ const GATE = process.env.CREW_GATE ?? 'https://edgerouter-gate.prakashharsh32.wo
 /*
   Arc by default, which decides more than which chain settles.
 
-  The unit follows the network everywhere — `formatAmount` renders hbar for
-  `hedera:*` and USDC otherwise — so every budget, receipt and ledger row in the
-  app is denominated by this line. Arc also pays from a Circle Gateway balance
+  Every amount in the app is USDC; the network decides where it settles and
+  how "can this pay" is asked. Arc pays from a Circle Gateway balance
   rather than a token balance, which is why an address here can hold USDC and
   still be unable to buy anything until it is deposited.
 */
 const NETWORK = process.env.CREW_NETWORK ?? ARC_TESTNET;
+
+/** Wei as ETH, to six decimals — enough to tell 0.00045 from 0.0006. */
+const formatEth = (wei: bigint): string => {
+  const whole = wei / 10n ** 18n;
+  const fraction = (wei % 10n ** 18n).toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+  return `${whole}${fraction ? `.${fraction}` : ''} ETH`;
+};
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body, (_key, value) => (typeof value === 'bigint' ? value.toString() : value)), {
@@ -78,11 +94,25 @@ const json = (body: unknown, status = 200): Response =>
   });
 
 const stateOf = (runtime: Runtime) => ({
+  locked: false as const,
+  /*
+    Where the key came from. A derived key can be re-made on another computer
+    by signing again; a generated one exists only in this file — and the page
+    says which, because that is the difference between "nothing to back up"
+    and "back this up".
+  */
+  signer: { derivedFrom },
   gate: runtime.gate,
   network: runtime.wallet.network,
   account: runtime.wallet.account,
   spendableMinor: runtime.wallet.spendableMinor.toString(),
   spendable: formatAmount(runtime.wallet.network, runtime.wallet.spendableMinor),
+  /*
+    Everything the crew holds, wherever it sits: spendable (Gateway balance and
+    tab) plus what is still in the wallet itself. One number for a person
+    checking their balance, who does not care which contract it is in.
+  */
+  total: formatAmount(runtime.wallet.network, runtime.wallet.spendableMinor + (runtime.wallet.heldMinor ?? 0n)),
   ...(runtime.wallet.heldMinor === undefined
     ? {}
     : { held: formatAmount(runtime.wallet.network, runtime.wallet.heldMinor) }),
@@ -99,6 +129,30 @@ const stateOf = (runtime: Runtime) => ({
     transaction apart and share no instructions.
   */
   funded: runtime.wallet.shortfall === undefined,
+  /*
+    Whether USDC in the wallet is deposited into Gateway without anyone asking,
+    and from what balance. Null means the page offers the manual deposit.
+  */
+  autoDepositFrom: (() => {
+    const threshold = autoDepositThreshold(runtime.wallet.network);
+    return threshold === null ? null : formatAmount(runtime.wallet.network, threshold);
+  })(),
+  depositing: isDepositing(),
+  /*
+    Sepolia ETH for agent names. The page asks for a top-up when it is low,
+    because a hire that cannot pay for its name still succeeds — just without
+    the name — and nobody would otherwise know why.
+  */
+  nameGas:
+    runtime.naming && runtime.nameGasWei !== null
+      ? {
+          address: runtime.wallet.account,
+          balance: formatEth(runtime.nameGasWei),
+          lowBelow: formatEth(NAME_GAS_LOW_WEI),
+          ask: formatEth(NAME_GAS_ASK_WEI),
+          low: runtime.nameGasWei < NAME_GAS_LOW_WEI,
+        }
+      : null,
   ...(runtime.wallet.shortfall ? { shortfall: runtime.wallet.shortfall } : {}),
   /*
     How a person funds this from their own wallet, when the chain has a way.
@@ -106,8 +160,16 @@ const stateOf = (runtime: Runtime) => ({
   */
   funding: fundingRouteFor(runtime.wallet.network, runtime.wallet.account),
   privyAppId: privyAppId(),
+  /*
+    Where organizations live. A separate service from this runtime and from the
+    gate — see apps/crew-backend — so the page talks to it directly, with the
+    user's own login, rather than through a process that has no business
+    holding their session.
+  */
+  crewBackend: process.env.CREW_BACKEND ?? 'http://127.0.0.1:8788',
   naming: runtime.naming,
-  root: ROOT_NAME,
+  root: runtime.root,
+  identity: runtime.crew.identity ?? null,
   models: MODELS,
   /*
     Sent rather than hard-coded in the page, so the checkboxes are the
@@ -132,7 +194,12 @@ const stateOf = (runtime: Runtime) => ({
     carries only that it may reach some directory at all.
   */
   projects: runtime.crew.projects ?? [],
-  agents: runtime.crew.agents.map((agent) => ({
+  /*
+    Crew pays in USDC on EVM chains only. Agents hired on Hedera before that
+    stay in the crew file untouched, but they are not shown: nothing here can
+    pay for them, and their amounts are in a unit the app no longer renders.
+  */
+  agents: runtime.crew.agents.filter((agent) => agent.network.startsWith('eip155:')).map((agent) => ({
     ...agent,
     running: isRunning(agent.id),
     /*
@@ -158,27 +225,96 @@ console.log('\n  edgerouter crew\n');
 console.log(`  gate     ${GATE}`);
 console.log(`  network  ${NETWORK}`);
 
-let runtime: Runtime;
-try {
-  runtime = await boot({ gate: GATE, network: NETWORK });
-} catch (error) {
-  console.error(`\n  cannot start: ${(error as Error).message}\n`);
-  process.exit(1);
-}
+/*
+  Null while locked. The runtime used to open (or generate) a key before it
+  served anything; now a missing key means waiting for the page to supply a
+  signature, because a key generated here could never be made again anywhere
+  else.
+*/
+let runtime: Runtime | null = null;
+let derivedFrom: string | null = null;
 
-console.log(`  wallet   ${runtime.wallet.account}`);
-console.log(
-  runtime.wallet.shortfall === undefined
-    ? `  can spend ${formatAmount(runtime.wallet.network, runtime.wallet.spendableMinor)}`
-    : runtime.wallet.shortfall === 'undeposited'
-      ? `  holds ${formatAmount(runtime.wallet.network, runtime.wallet.heldMinor ?? 0n)}, none of it deposited yet`
-      : '  not funded yet — the app will say what to do',
-);
-console.log(`  names    ${runtime.naming ? `under ${ROOT_NAME}` : 'off — the root name owns no registry here'}`);
+const start = async (): Promise<void> => {
+  const started = await boot({ gate: GATE, network: NETWORK });
+  derivedFrom = storedSigner()?.derivedFrom ?? null;
+  runtime = started;
+
+  console.log(`  wallet   ${started.wallet.account}${derivedFrom ? `  (from ${derivedFrom})` : ''}`);
+  console.log(
+    started.wallet.shortfall === undefined
+      ? `  can spend ${formatAmount(started.wallet.network, started.wallet.spendableMinor)}`
+      : started.wallet.shortfall === 'undeposited'
+        ? `  holds ${formatAmount(started.wallet.network, started.wallet.heldMinor ?? 0n)}, none of it deposited yet`
+        : '  not funded yet — the app will say what to do',
+  );
+  console.log(
+    `  names    ${
+      started.root
+        ? started.naming
+          ? `under ${started.root}`
+          : `off — ${started.root} owns no registry`
+        : 'none yet — choose a name in the page'
+    }`,
+  );
+};
+
+if (storedSigner()) {
+  try {
+    await start();
+  } catch (error) {
+    console.error(`\n  cannot start: ${(error as Error).message}\n`);
+    process.exit(1);
+  }
+} else {
+  console.log('  wallet   locked — sign with your wallet in the page to unlock');
+}
 console.log(`\n  open http://127.0.0.1:${PORT}\n`);
 
+/** What a locked runtime tells the page: enough to log in and sign, nothing else. */
+const lockedState = () => ({
+  locked: true as const,
+  network: NETWORK,
+  privyAppId: privyAppId(),
+  crewBackend: process.env.CREW_BACKEND ?? 'http://127.0.0.1:8788',
+  /*
+    For Privy's chain configuration only. There is no crew address to deposit
+    to yet, and the unlock screen offers no deposit.
+  */
+  funding: fundingRouteFor(NETWORK, '0x0000000000000000000000000000000000000000'),
+  unlock: UNLOCK,
+});
+
+const currentState = () => (runtime ? stateOf(runtime) : lockedState());
+
+/*
+  The pages allowed to unlock: this runtime's own, and Vite's in development.
+  Loopback is not a boundary against the other tabs in the same browser, and
+  unlocking is the one route where a forged request would matter — another page
+  could install a key derived from its own wallet, and the person would then
+  fund an address somebody else controls.
+*/
+const PAGE_ORIGINS = new Set([
+  `http://127.0.0.1:${PORT}`,
+  `http://localhost:${PORT}`,
+  'http://127.0.0.1:5180',
+  'http://localhost:5180',
+]);
+let unlocking = false;
+
 /** Whether anything would be cut off by rebuilding the delegation tree. */
-const busy = (): boolean => runtime.crew.agents.some((agent) => isRunning(agent.id));
+const busy = (): boolean => runtime?.crew.agents.some((agent) => isRunning(agent.id)) ?? false;
+
+/*
+  Built assets when they exist, so a demo is one command; in development Vite
+  serves the page and proxies the API routes.
+*/
+const serveUi = async (path: string): Promise<Response> => {
+  const file = Bun.file(`${HERE}../dist${path === '/' ? '/index.html' : path}`);
+  if (await file.exists()) return new Response(file);
+  const index = Bun.file(`${HERE}../dist/index.html`);
+  if (await index.exists()) return new Response(index);
+  return new Response('the UI is not built — run `bun run dev` in apps/crew', { status: 404 });
+};
 
 /*
   Polled, because a deposit happens in someone else's wallet and nothing tells
@@ -187,8 +323,11 @@ const busy = (): boolean => runtime.crew.agents.some((agent) => isRunning(agent.
   endpoint that does not wait for the timer.
 */
 setInterval(() => {
-  void refreshFunding(runtime, busy).catch(() => undefined);
+  if (runtime) void refreshFunding(runtime, busy).catch(() => undefined);
 }, 20_000);
+
+/* Once now, so USDC already in the wallet is deposited without waiting for the first poll. */
+if (runtime) void refreshFunding(runtime, busy).catch(() => undefined);
 
 Bun.serve({
   port: PORT,
@@ -198,7 +337,7 @@ Bun.serve({
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === '/api/state') return json(stateOf(runtime));
+    if (path === '/api/state') return json(currentState());
 
     /*
       One stream, opened once, carrying every change. The roster is pushed on
@@ -211,11 +350,11 @@ Bun.serve({
         start(controller) {
           const send = (event: unknown) =>
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-          send({ type: 'state', state: stateOf(runtime) });
+          send({ type: 'state', state: currentState() });
           const unsubscribe = subscribe((event) => {
             send(
               event.type === 'crew' || event.type === 'requests'
-                ? { type: 'state', state: stateOf(runtime) }
+                ? { type: 'state', state: currentState() }
                 : event,
             );
           });
@@ -232,6 +371,46 @@ Bun.serve({
       return new Response(body, {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' },
       });
+    }
+
+    /*
+      Unlocking: two signatures in, a key derived, the runtime started. The
+      signatures are used and dropped — only the derived key is kept, in the
+      same file a generated key always lived in.
+    */
+    if (request.method === 'POST' && path === '/api/signer/unlock') {
+      const origin = request.headers.get('origin');
+      if (!origin || !PAGE_ORIGINS.has(origin)) {
+        return json({ error: 'unlocking is only accepted from the Crew page' }, 403);
+      }
+      if (runtime) return json({ error: 'this crew is already unlocked' }, 409);
+      if (unlocking) return json({ error: 'already unlocking' }, 409);
+
+      unlocking = true;
+      try {
+        const body = (await request.json().catch(() => ({}))) as { account?: unknown; signatures?: unknown };
+        const signer = await deriveSigner(
+          typeof body.account === 'string' ? body.account : '',
+          Array.isArray(body.signatures)
+            ? body.signatures.filter((signature): signature is string => typeof signature === 'string')
+            : [],
+        );
+        saveSigner(signer);
+        await start();
+        emit({ type: 'crew', agents: [] });
+        if (runtime) void refreshFunding(runtime, busy).catch(() => undefined);
+        return json({ address: signer.address });
+      } catch (error) {
+        return json({ error: (error as Error).message }, 400);
+      } finally {
+        unlocking = false;
+      }
+    }
+
+    if (!runtime) {
+      return path.startsWith('/api/')
+        ? json({ error: 'this crew is locked — sign with your wallet in the page to unlock it' }, 423)
+        : serveUi(path);
     }
 
     if (request.method === 'POST' && path === '/api/agents') {
@@ -266,7 +445,7 @@ Bun.serve({
 
     /*
       Answering an agent's request for more budget. Approval carries an amount
-      rather than a yes, because a person who reads "needs 2 ℏ to finish" and
+      rather than a yes, because a person who reads "needs 2 USDC to finish" and
       thinks "a tenth of that" should be able to say so — and because a granted
       amount somebody typed is a limit they set rather than one they waved
       through.
@@ -284,6 +463,25 @@ Bun.serve({
     if (request.method === 'POST' && path === '/api/funding/refresh') {
       const changed = await refreshFunding(runtime, busy);
       return json({ changed, funded: runtime.wallet.shortfall === undefined });
+    }
+
+    /*
+      Adopting the person's name under crewai.eth as the parent of agent names.
+      The page learns the name from the crew backend; the runtime believes it
+      only after checking the chain (see `setIdentity`).
+    */
+    if (request.method === 'POST' && path === '/api/identity') {
+      const body = (await request.json().catch(() => ({}))) as { name?: unknown };
+      const name = typeof body.name === 'string' ? body.name.trim().toLowerCase() : '';
+      if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.crewai\.eth$/.test(name)) {
+        return json({ error: 'that is not a name under crewai.eth' }, 400);
+      }
+      try {
+        await setIdentity(runtime, name, derivedFrom);
+        return json({ identity: runtime.crew.identity });
+      } catch (error) {
+        return json({ error: (error as Error).message }, 400);
+      }
     }
 
     if (request.method === 'POST' && path === '/api/projects') {
@@ -327,7 +525,7 @@ Bun.serve({
       return json({ answered: settle(id, { approved: true, grantedMinor }) });
     }
 
-    const match = /^\/api\/agents\/([^/]+)\/(task|stop|fire|edit)$/.exec(path);
+    const match = /^\/api\/agents\/([^/]+)\/(task|stop|fire|edit|remove)$/.exec(path);
     if (request.method === 'POST' && match) {
       const [, id, action] = match as unknown as [string, string, string];
       try {
@@ -361,6 +559,10 @@ Bun.serve({
           await fire(runtime, id);
           return json({ fired: true });
         }
+        if (action === 'remove') {
+          await deleteAgent(runtime, agent.id, isRunning);
+          return json({ removed: true });
+        }
 
         const { prompt } = (await request.json()) as { prompt: string };
         if (!prompt?.trim()) return json({ error: 'a task needs a prompt' }, 400);
@@ -378,15 +580,7 @@ Bun.serve({
       }
     }
 
-    /*
-      Everything else is the UI. Built assets when they exist, so a demo is one
-      command; in development Vite serves the page and proxies these routes.
-    */
-    const file = Bun.file(`${HERE}../dist${path === '/' ? '/index.html' : path}`);
-    if (await file.exists()) return new Response(file);
-    const index = Bun.file(`${HERE}../dist/index.html`);
-    if (await index.exists()) return new Response(index);
-
-    return new Response('the UI is not built — run `bun run dev` in apps/crew', { status: 404 });
+    /* Everything else is the UI. */
+    return serveUi(path);
   },
 });

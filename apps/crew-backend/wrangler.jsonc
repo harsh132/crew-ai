@@ -20,11 +20,27 @@
     and an alarm can.
   */
   "durable_objects": {
-    "bindings": [{ "name": "ORG_SETUP", "class_name": "OrgSetup" }]
+    "bindings": [
+      { "name": "ORG_SETUP", "class_name": "OrgSetup" },
+      /* One object per user while their name under crewai.eth is being set up. */
+      { "name": "NAME_SETUP", "class_name": "NameSetup" },
+      /* One object per member while their name under crew.org.eth is being issued. */
+      { "name": "MEMBER_SETUP", "class_name": "MemberNameSetup" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OrgSetup"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["OrgSetup"] },
+    { "tag": "v2", "new_sqlite_classes": ["NameSetup"] },
+    { "tag": "v3", "new_sqlite_classes": ["MemberNameSetup"] }
+  ],
 
   "vars": {
-    "SEPOLIA_RPC": "https://ethereum-sepolia-rpc.publicnode.com"
+    "SEPOLIA_RPC": "https://ethereum-sepolia-rpc.publicnode.com",
+    /*
+      0.01 ETH for each new user's Crew signer, from the manager key — enough
+      for well over a dozen agent names, so onboarding does not have to ask for
+      Sepolia ETH. Capped at what the manager can afford (see `setupUserName`).
+    */
+    "USER_GAS_WEI": "10000000000000000"
   }
 }

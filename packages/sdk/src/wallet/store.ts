@@ -107,6 +107,14 @@ export type StoredWallet = {
    * is the account.
    */
   accounts?: Record<string, string>;
+  /**
+   * The wallet whose signature this key was derived from, when it was.
+   *
+   * Present only for a key that can be re-made on another machine by signing
+   * again, and absent for a generated one — which is the difference between a
+   * file that is a cache and a file that is the only copy.
+   */
+  derivedFrom?: string;
 };
 
 const readStored = (path: string): StoredWallet | null => {
@@ -127,6 +135,7 @@ const readStored = (path: string): StoredWallet | null => {
     ...(m.accounts && typeof m.accounts === 'object'
       ? { accounts: m.accounts as Record<string, string> }
       : {}),
+    ...(typeof m.derivedFrom === 'string' ? { derivedFrom: m.derivedFrom } : {}),
   };
 };
 
@@ -140,6 +149,20 @@ const writeStored = (path: string, wallet: StoredWallet): void => {
     // Windows. `describe()` is what tells the truth about this.
   }
 };
+
+/**
+ * The stored wallet, without generating one when there is none.
+ *
+ * For a caller that must not end up with a random key by accident — Crew waits
+ * for a signature to derive its key from, and `loadOrCreateEvmWallet` would
+ * quietly answer that wait with a key nobody can ever re-make.
+ */
+export const readSharedWallet = (home = defaultHome()): StoredWallet | null =>
+  readStored(sharedWalletPath(home));
+
+/** Writes the one wallet. For a key made elsewhere — derived, not generated. */
+export const writeSharedWallet = (wallet: StoredWallet, home = defaultHome()): void =>
+  writeStored(sharedWalletPath(home), wallet);
 
 /* ------------------------------------------------------------------ legacy */
 

@@ -2,7 +2,7 @@
  * The conversation with one agent, and what each of its answers cost.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { ArrowUp, PanelRightClose, PanelRightOpen, Square } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -106,7 +106,17 @@ const TaskView = ({ task, network }: { task: Task; network: string }) => (
   </>
 );
 
-export const AgentThread = ({ agent, state }: { agent: Agent; state: State }) => {
+export const AgentThread = ({
+  agent,
+  state,
+  detailsOpen,
+  onToggleDetails,
+}: {
+  agent: Agent;
+  state: State;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+}) => {
   /*
     A request belongs to whichever agent raised it, and only one can be open at
     a time — the runtime refuses a second while the first is unanswered, so a
@@ -160,13 +170,32 @@ export const AgentThread = ({ agent, state }: { agent: Agent; state: State }) =>
           <div className="truncate text-sm font-semibold">{nameOf(agent)}</div>
           <div className="truncate font-mono text-[11px] text-muted-foreground">{agent.name ?? 'no ENS name'}</div>
         </div>
-        {agent.running ? (
-          <Badge variant="secondary" className="ml-auto gap-1.5">
-            <span className="crew-breathe size-1.5 rounded-full bg-primary" />
-            working
-          </Badge>
-        ) : null}
+        <div className="ml-auto flex items-center gap-1.5">
+          {agent.running ? (
+            <Badge variant="secondary" className="gap-1.5">
+              <span className="crew-breathe size-1.5 rounded-full bg-primary" />
+              working
+            </Badge>
+          ) : null}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground"
+            onClick={onToggleDetails}
+            aria-label={detailsOpen ? 'Hide details' : 'Show details'}
+            aria-pressed={detailsOpen}
+            title={detailsOpen ? 'Hide details' : 'Show details'}
+          >
+            {detailsOpen ? (
+              <PanelRightClose className="size-4" aria-hidden />
+            ) : (
+              <PanelRightOpen className="size-4" aria-hidden />
+            )}
+          </Button>
+        </div>
       </header>
+
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-5 py-6">
@@ -257,10 +286,6 @@ export const AgentThread = ({ agent, state }: { agent: Agent; state: State }) =>
               </Button>
             )}
           </div>
-
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            {agent.spent} spent of {agent.budget} · {agent.network}
-          </p>
         </div>
       </div>
 

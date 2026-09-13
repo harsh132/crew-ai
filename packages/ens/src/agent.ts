@@ -293,7 +293,25 @@ export const mintAgentName = async (
   } catch (error) {
     if (decorative.length === 0) throw error;
     profileWritten = false;
-    hashes = await sendCalls(clients, essential);
+    /*
+      When batching was refused and the calls went one at a time, everything
+      before the failing call has already landed — the registration among them.
+      Sending it again reverts, which used to turn a name that exists on chain
+      into an agent the app believed had none. So the registration is checked
+      before the retry, and left out once it is there.
+    */
+    const registeredNow = registerCall
+      ? await clients.public
+          .readContract({
+            address: params.parentRegistry,
+            abi: registryAbi,
+            functionName: 'ownerOf',
+            args: [canonicalIdOf(label)],
+          })
+          .then((current) => current.toLowerCase() === owner.toLowerCase())
+          .catch(() => false)
+      : false;
+    hashes = await sendCalls(clients, registeredNow ? essential.filter((call) => call !== registerCall) : essential);
   }
 
   return {

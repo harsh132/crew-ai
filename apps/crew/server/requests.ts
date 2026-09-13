@@ -17,7 +17,7 @@
  *
  * ## The human may grant less
  *
- * Approval takes an amount rather than a yes. An agent that asks for two hbar
+ * Approval takes an amount rather than a yes. An agent that asks for two USDC
  * and needs a tenth of one should get a tenth, and making the granter retype
  * the number is the difference between a limit they set and a limit they
  * rubber-stamped.

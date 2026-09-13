@@ -24,6 +24,17 @@
       "port": 8787
     },
     {
+      "name": "crew-web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "apps/crew",
+        "dev"
+      ],
+      "port": 5180
+    },
+    {
       "name": "crew-backend",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
