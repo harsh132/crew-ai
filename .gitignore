@@ -15,3 +15,6 @@ packages/*/src/**/*.d.ts
 # Built plugin tarball. Stable name, rebuilt by `npm run pack`.
 packages/dsh/*.tgz
 apps/crew/dist/
+
+# The crew-ai npm package's build output, rebuilt by `npm pack` / `npm publish`.
+packages/crew-ai/server/

@@ -38,6 +38,10 @@ import {
   type Runtime,
 } from './crew';
 import { runTask, stop, isRunning } from './run';
+import { readFile, stat } from 'node:fs/promises';
+import { dirname, extname, join, normalize, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { serve } from './http';
 import { emit, subscribe } from './events';
 import { autoDepositThreshold, isDepositing } from './auto-deposit';
 import { deriveSigner, saveSigner, storedSigner, UNLOCK } from './signer';
@@ -48,25 +52,47 @@ import { pending, settle } from './requests';
 import { fundingRouteFor, privyAppId } from './funding';
 
 /*
-  Declared rather than imported from `@types/bun`.
-
-  The workspace already types a Cloudflare Worker, and Bun's global types
-  redefine `fetch`, `Request` and `Response` in ways that collide with
-  `@cloudflare/workers-types`. Two runtimes in one typecheck is a fight nobody
-  wins, so this file borrows the three members it actually uses — the same
-  approach the SDK's live checks take.
+  Plain Node, not Bun. The runtime ships as the `crew-ai` npm package, and the
+  people installing it should not need Bun: serving goes through `node:http`
+  (see http.ts) and files through `node:fs`. Bun implements both, so
+  `bun server/main.ts` still works for development.
 */
-declare const Bun: {
-  serve(options: {
-    port: number;
-    hostname: string;
-    idleTimeout?: number;
-    fetch: (request: Request) => Promise<Response>;
-  }): unknown;
-  file(path: string): { exists(): Promise<boolean> } & BodyInit;
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/*
+  The built page. Next to this file's parent in the repo (`apps/crew/dist`), and
+  in the npm package too, where the bundled server sits in `server/` beside
+  `dist/`.
+*/
+const UI_DIR = process.env.CREW_UI_DIR ?? join(HERE, '..', 'dist');
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json',
 };
 
-const HERE = new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const isFile = async (path: string): Promise<boolean> => {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+};
 
 const PORT = Number(process.env.CREW_PORT ?? 8800);
 const GATE = process.env.CREW_GATE ?? 'https://edgerouter-gate.prakashharsh32.workers.dev';
@@ -315,11 +341,28 @@ const busy = (): boolean => runtime?.crew.agents.some((agent) => isRunning(agent
   serves the page and proxies the API routes.
 */
 const serveUi = async (path: string): Promise<Response> => {
-  const file = Bun.file(`${HERE}../dist${path === '/' ? '/index.html' : path}`);
-  if (await file.exists()) return new Response(file);
-  const index = Bun.file(`${HERE}../dist/index.html`);
-  if (await index.exists()) return new Response(index);
-  return new Response('the UI is not built — run `bun run dev` in apps/crew', { status: 404 });
+  /*
+    Resolved inside UI_DIR and refused if it escapes it — `/../../wallet.json`
+    must never be a way to read the crew's key off loopback. Anything not found
+    is the page itself, so client-side routes load.
+  */
+  let relative: string;
+  try {
+    relative = normalize(decodeURIComponent(path)).replace(/^[\\/]+/, '');
+  } catch {
+    return new Response('bad path', { status: 400 });
+  }
+  const requested = join(UI_DIR, relative || 'index.html');
+  if (requested !== UI_DIR && !requested.startsWith(UI_DIR + sep)) return new Response('not found', { status: 404 });
+
+  const target = (await isFile(requested)) ? requested : join(UI_DIR, 'index.html');
+  if (!(await isFile(target))) {
+    return new Response('the UI is not built — run `bun run build` in apps/crew', { status: 404 });
+  }
+  const body = await readFile(target);
+  return new Response(body as unknown as BodyInit, {
+    headers: { 'content-type': CONTENT_TYPES[extname(target).toLowerCase()] ?? 'application/octet-stream' },
+  });
 };
 
 /*
@@ -335,10 +378,9 @@ setInterval(() => {
 /* Once now, so USDC already in the wallet is deposited without waiting for the first poll. */
 if (runtime) void refreshFunding(runtime, busy).catch(() => undefined);
 
-Bun.serve({
+serve({
   port: PORT,
   hostname: '127.0.0.1',
-  idleTimeout: 0,
   async fetch(request: Request) {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -589,4 +631,8 @@ Bun.serve({
     /* Everything else is the UI. */
     return serveUi(path);
   },
+}).catch((error: Error) => {
+  console.error(`\n  cannot serve on 127.0.0.1:${PORT}: ${error.message}`);
+  console.error('  set CREW_PORT to use another port\n');
+  process.exit(1);
 });

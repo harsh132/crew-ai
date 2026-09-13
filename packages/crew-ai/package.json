@@ -1,0 +1,40 @@
+{
+  "name": "crew-ai",
+  "version": "0.1.0",
+  "description": "A crew of AI agents that pay per call in USDC, each with its own ENS name and a budget it cannot raise.",
+  "type": "module",
+  "bin": {
+    "crew-ai": "bin/crew-ai.mjs"
+  },
+  "files": [
+    "bin",
+    "server",
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "node build.mjs"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "usdc",
+    "x402",
+    "ens",
+    "arc",
+    "crew"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harsh132/crew-ai.git",
+    "directory": "packages/crew-ai"
+  },
+  "homepage": "https://github.com/harsh132/crew-ai#readme",
+  "bugs": {
+    "url": "https://github.com/harsh132/crew-ai/issues"
+  }
+}
