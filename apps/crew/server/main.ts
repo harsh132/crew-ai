@@ -79,6 +79,12 @@ const GATE = process.env.CREW_GATE ?? 'https://edgerouter-gate.prakashharsh32.wo
   still be unable to buy anything until it is deposited.
 */
 const NETWORK = process.env.CREW_NETWORK ?? ARC_TESTNET;
+/*
+  The deployed crew backend, where names under crewai.eth and organizations
+  live. `CREW_BACKEND=http://127.0.0.1:8788` points a runtime at a local
+  `wrangler dev` instead.
+*/
+const CREW_BACKEND = process.env.CREW_BACKEND ?? 'https://crew-backend.prakashharsh32.workers.dev';
 
 /** Wei as ETH, to six decimals — enough to tell 0.00045 from 0.0006. */
 const formatEth = (wei: bigint): string => {
@@ -166,7 +172,7 @@ const stateOf = (runtime: Runtime) => ({
     user's own login, rather than through a process that has no business
     holding their session.
   */
-  crewBackend: process.env.CREW_BACKEND ?? 'http://127.0.0.1:8788',
+  crewBackend: CREW_BACKEND,
   naming: runtime.naming,
   root: runtime.root,
   identity: runtime.crew.identity ?? null,
@@ -275,7 +281,7 @@ const lockedState = () => ({
   locked: true as const,
   network: NETWORK,
   privyAppId: privyAppId(),
-  crewBackend: process.env.CREW_BACKEND ?? 'http://127.0.0.1:8788',
+  crewBackend: CREW_BACKEND,
   /*
     For Privy's chain configuration only. There is no crew address to deposit
     to yet, and the unlock screen offers no deposit.
