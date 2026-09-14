@@ -9,6 +9,7 @@
   "scripts": {
     "check": "bun packages/core/check.ts && bun packages/sdk/check.ts && bun packages/sdk/wallet-check.ts && bun packages/sdk/evm-check.ts && bun packages/sdk/composite-check.ts && bun packages/sdk/delegate-check.ts && bun packages/sdk/tab-check.ts && bun packages/sdk/tab-authority-check.ts &&bun packages/dsh/check.ts && bun packages/dsh/delegation-check.ts && bun apps/gate/check.ts && bun apps/gate/config-check.ts && bun apps/crew/server/projects-check.ts",
     "smoke": "bun apps/gate/smoke.ts",
+    "release": "node packages/crew-ai/release.mjs",
     "dev": "wrangler dev --config apps/gate/wrangler.jsonc",
     "typecheck": "tsc --noEmit",
     "facilitator-check": "bun apps/gate/facilitator-check.ts",
