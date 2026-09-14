@@ -1,6 +1,6 @@
 {
   "name": "@harsh132/crew-ai",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A crew of AI agents that pay per call in USDC, each with its own ENS name and a budget it cannot raise.",
   "type": "module",
   "bin": {
