@@ -9,6 +9,12 @@ crew
 
 Then open http://127.0.0.1:8800.
 
+Or run it in Docker:
+
+```bash
+docker run -d --name crew -p 127.0.0.1:8800:8800 -v crew-data:/data harsh132/crew-ai
+```
+
 ## What happens when you start it
 
 1. **Unlock your crew.** Connect a wallet (email, browser wallet or WalletConnect) and sign twice. Your crew's key is derived from that signature, so signing with the same wallet on any computer gives you the same crew back — there is nothing to back up.
