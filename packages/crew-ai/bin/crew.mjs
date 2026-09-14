@@ -33,6 +33,8 @@ Environment
   CREW_BACKEND         crew backend URL, for names and organizations
   CREW_AUTO_DEPOSIT    set to "off" to stop depositing wallet USDC into Gateway
   CREW_HOME            where the crew's key and data live (default ~/.crew-ai)
+  CREW_HOST            address to listen on (default 127.0.0.1)
+  CREW_PAGE_ORIGINS    extra page origins allowed to unlock, comma-separated
 
 Your crew's key is derived from your wallet's signature and cached in
 CREW_HOME. Sign in with the same wallet on any computer to get the same crew

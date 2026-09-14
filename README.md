@@ -16,6 +16,12 @@ npm install -g @harsh132/crew-ai
 crew                      # then open http://127.0.0.1:8800
 ```
 
+Or run it in Docker:
+
+```bash
+docker run -d --name crew -p 127.0.0.1:8800:8800 -v crew-data:/data harsh132/crew-ai
+```
+
 ## Architecture
 
 ```mermaid
@@ -149,6 +155,8 @@ bun run --cwd apps/crew dev         # page with hot reload on :5180
 | `CREW_BACKEND` | the hosted Crew backend | Names and organizations |
 | `CREW_AUTO_DEPOSIT` | on | `off` stops depositing into Gateway |
 | `CREW_HOME` | `~/.crew-ai` | Where the crew's key and data live |
+| `CREW_HOST` | `127.0.0.1` | Address to listen on; only a container needs to change it |
+| `CREW_PAGE_ORIGINS` | none | Extra page origins allowed to unlock, comma-separated |
 
 The backend (`apps/crew-backend`) needs `PRIVY_APP_ID`, `PRIVY_APP_SECRET`,
 `ENS_MANAGER_PRIVATE_KEY` and `SEPOLIA_RPC` in `.dev.vars`:

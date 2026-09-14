@@ -339,6 +339,14 @@ const PAGE_ORIGINS = new Set([
   `http://localhost:${PORT}`,
   'http://127.0.0.1:5180',
   'http://localhost:5180',
+  /*
+    Where the page is actually reached when that differs from PORT — a
+    container published on another host port. Comma-separated, exact origins.
+  */
+  ...(process.env.CREW_PAGE_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 ]);
 let unlocking = false;
 
@@ -389,7 +397,12 @@ if (runtime) void refreshFunding(runtime, busy).catch(() => undefined);
 
 serve({
   port: PORT,
-  hostname: '127.0.0.1',
+  /*
+    Loopback unless told otherwise. Only a container sets this, and it should
+    publish the port on the host's loopback (`-p 127.0.0.1:…`) so the key's
+    runtime is still unreachable from the network.
+  */
+  hostname: process.env.CREW_HOST ?? '127.0.0.1',
   async fetch(request: Request) {
     const url = new URL(request.url);
     const path = url.pathname;
